@@ -17,7 +17,7 @@ export default function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-base-border bg-base-bg/90 backdrop-blur">
+    <header className="sticky top-0 z-20 bg-base-bg/90 backdrop-blur">
       <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
         <Link href="/" className="flex items-center gap-2">
           <Logo size={32} />
@@ -42,7 +42,7 @@ export default function Header() {
           </button>
         </div>
       </div>
-      <div className="harbor-wave h-1.5 w-full" />
+      <div className="harbor-wave h-2.5 w-full" />
     </header>
   );
 }

@@ -28,7 +28,7 @@ export default function LoginPage() {
 
         <p className="mt-4 text-xs text-ink-faint">{t("login_note")}</p>
       </div>
-      <div className="harbor-wave absolute bottom-0 h-10 w-full opacity-90" />
+      <div className="harbor-wave absolute bottom-0 h-2.5 w-full opacity-90" style={{ backgroundPosition: "bottom" }} />
     </main>
   );
 }
