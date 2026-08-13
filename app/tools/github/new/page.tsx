@@ -6,6 +6,7 @@ import { ChevronLeft, CheckCircle2, ExternalLink, Loader2, FolderTree } from "lu
 import Header from "@/components/Header";
 import UploadZone, { UploadedBlob } from "@/components/UploadZone";
 import TreeView from "@/components/TreeView";
+import ZipWarnings from "@/components/ZipWarnings";
 import { useLang } from "@/lib/i18n-context";
 import { useBlobCleanup } from "@/lib/use-blob-cleanup";
 
@@ -15,6 +16,7 @@ interface AnalyzeResult {
   buildCommand: string | null;
   fileCount: number;
   tree: any[];
+  warnings?: { oversizedFiles: string[]; caseCollisions: string[][]; skippedUnsafePaths: string[] };
 }
 
 export default function NewRepoPage() {
@@ -110,6 +112,8 @@ export default function NewRepoPage() {
                     <TreeView nodes={analysis.tree} />
                   </div>
                 </div>
+
+                <ZipWarnings warnings={analysis.warnings} />
 
                 <label className="flex flex-col gap-1.5">
                   <span className="text-sm font-medium text-ink-dim">{t("new_repo_name_label")}</span>

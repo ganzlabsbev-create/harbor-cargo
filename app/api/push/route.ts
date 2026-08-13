@@ -46,6 +46,17 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    if (extracted.warnings.oversizedFiles.length > 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "file_too_large",
+          detail: `${extracted.warnings.oversizedFiles.length === 1 ? "This file is" : "These files are"} too large for GitHub: ${extracted.warnings.oversizedFiles.join(", ")}`,
+        },
+        { status: 400 }
+      );
+    }
+
     const detection = detectFramework(extracted.extractDir, extracted.packageJson);
     const relativeFiles = listAllFiles(extracted.extractDir);
 

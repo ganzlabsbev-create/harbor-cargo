@@ -193,7 +193,7 @@ export function sanitizeRepoName(name: string): string {
 /** Lists every repo the token's owner can access, paging through all results. */
 export async function listRepos(
   token: string
-): Promise<{ name: string; full_name: string; default_branch: string; updated_at: string }[]> {
+): Promise<{ name: string; full_name: string; default_branch: string; updated_at: string; language: string | null }[]> {
   const perPage = 100;
   const results: any[] = [];
   let page = 1;
@@ -212,7 +212,32 @@ export async function listRepos(
     full_name: r.full_name,
     default_branch: r.default_branch || "main",
     updated_at: r.updated_at,
+    language: r.language || null,
   }));
+}
+
+const LOGO_FILENAME = /^(logo|icon|favicon)\.(png|jpe?g|svg|webp)$/i;
+const LOGO_DIRS = ["", "public", "assets", "static", ".github"];
+
+/**
+ * Looks for a project logo/icon image in common spots (repo root, then
+ * public/assets/static/.github). One API call per directory checked, and
+ * stops at the first match — so usually 1 call, worst case 5. Returns null
+ * (never throws) if nothing is found or the repo is empty/inaccessible, so
+ * callers can always fall back to a generic icon.
+ */
+export async function findRepoLogo(token: string, owner: string, repo: string): Promise<string | null> {
+  for (const dir of LOGO_DIRS) {
+    try {
+      const data = await gh(token, `/repos/${owner}/${repo}/contents/${dir}`);
+      if (!Array.isArray(data)) continue;
+      const match = data.find((entry: any) => entry.type === "file" && LOGO_FILENAME.test(entry.name));
+      if (match?.download_url) return match.download_url as string;
+    } catch {
+      // directory doesn't exist / repo empty / rate limited — just try the next spot
+    }
+  }
+  return null;
 }
 
 /** Flat list of { path, sha } for every file currently in a repo/branch. */

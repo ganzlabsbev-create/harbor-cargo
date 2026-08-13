@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       repoEmpty: repoTree.length === 0,
       diff: { modified, zipOnly, repoOnly },
+      warnings: extracted.warnings,
     });
   } catch (err: any) {
     await del(blobPathname).catch(() => {});

@@ -42,6 +42,14 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    if (extracted.fileCount === 0) {
+      await del(blobPathname).catch(() => {});
+      return NextResponse.json(
+        { ok: false, error: "empty_zip", detail: "This ZIP doesn't contain any files." },
+        { status: 400 }
+      );
+    }
+
     const detection = detectFramework(extracted.extractDir, extracted.packageJson);
 
     return NextResponse.json({
@@ -50,6 +58,7 @@ export async function POST(req: NextRequest) {
       buildCommand: detection.buildCommand,
       fileCount: extracted.fileCount,
       tree: extracted.tree,
+      warnings: extracted.warnings,
     });
   } catch (err: any) {
     await del(blobPathname).catch(() => {});

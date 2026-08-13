@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.7.0";
+export const APP_VERSION = "0.8.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.8.0",
+    date: "2026-08",
+    notes: [
+      "The 'update repository' picker now shows each repo's actual logo (if it has one) or a language color dot instead of just the name — easier to spot the right one at a glance",
+      "Uploaded ZIPs are now checked for files too large for GitHub, unsafe/traversal paths, and case-only filename collisions before pushing, instead of failing partway through",
+      "Added a small size-limit hint (0–200MB) under the upload button",
+    ],
+  },
   {
     version: "0.7.0",
     date: "2026-08",

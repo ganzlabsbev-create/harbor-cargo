@@ -6,6 +6,8 @@ import { ChevronLeft, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 import Header from "@/components/Header";
 import UploadZone, { UploadedBlob } from "@/components/UploadZone";
 import DiffTreeView, { DiffStatus, buildDiffTree } from "@/components/DiffTreeView";
+import RepoIcon from "@/components/RepoIcon";
+import ZipWarnings from "@/components/ZipWarnings";
 import { useLang } from "@/lib/i18n-context";
 import { cleanupBlob, useBlobCleanup } from "@/lib/use-blob-cleanup";
 
@@ -14,6 +16,8 @@ interface RepoOption {
   full_name: string;
   default_branch: string;
   updated_at: string;
+  language?: string | null;
+  logoUrl?: string | null;
 }
 
 interface DiffPayload {
@@ -42,6 +46,7 @@ export default function UpdateRepoPage() {
   const [selectedReplace, setSelectedReplace] = useState<Set<string>>(new Set());
   const [selectedAdd, setSelectedAdd] = useState<Set<string>>(new Set());
   const [selectedDelete, setSelectedDelete] = useState<Set<string>>(new Set());
+  const [diffWarnings, setDiffWarnings] = useState<{ oversizedFiles: string[]; caseCollisions: string[][]; skippedUnsafePaths: string[] } | null>(null);
 
   const [commitMessage, setCommitMessage] = useState("");
   const [committing, setCommitting] = useState(false);
@@ -65,6 +70,7 @@ export default function UpdateRepoPage() {
     setBlob(b);
     setDiff(data.diff);
     setRepoEmpty(Boolean(data.repoEmpty));
+    setDiffWarnings(data.warnings || null);
     // Default: select everything so a single tap commits the whole update,
     // same as the previous behavior — user can uncheck what they don't want.
     setSelectedReplace(new Set(data.diff.modified));
@@ -159,10 +165,11 @@ export default function UpdateRepoPage() {
                   <button
                     key={r.full_name}
                     onClick={() => setSelected(r)}
-                    className="flex items-center justify-between rounded-xl border border-base-border bg-base-surface px-4 py-3 text-left text-sm text-ink transition active:scale-[0.99]"
+                    className="flex items-center gap-3 rounded-xl border border-base-border bg-base-surface px-4 py-3 text-left text-sm text-ink transition active:scale-[0.99]"
                   >
-                    <span className="font-medium">{r.full_name}</span>
-                    <span className="text-xs text-ink-faint">{r.default_branch}</span>
+                    <RepoIcon logoUrl={r.logoUrl} language={r.language} />
+                    <span className="min-w-0 flex-1 truncate font-medium">{r.full_name}</span>
+                    <span className="shrink-0 text-xs text-ink-faint">{r.default_branch}</span>
                   </button>
                 ))}
               </div>
@@ -186,6 +193,7 @@ export default function UpdateRepoPage() {
                   setSelected(null);
                   setBlob(null);
                   setDiff(null);
+                  setDiffWarnings(null);
                 }}
                 className="text-xs text-harbor-orange"
               >
@@ -203,6 +211,8 @@ export default function UpdateRepoPage() {
             ) : (
               <>
                 {repoEmpty && <p className="text-xs text-ink-faint">{t("repo_empty_note")}</p>}
+
+                <ZipWarnings warnings={diffWarnings} />
 
                 <div className="rounded-2xl border border-base-border bg-base-surface p-3 shadow-card">
                   <p className="mb-1 px-1 text-[11px] uppercase tracking-wide text-ink-faint">

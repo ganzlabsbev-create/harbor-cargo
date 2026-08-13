@@ -193,6 +193,7 @@ export default function UploadZone({
                 <FileUp size={14} /> {t("upload_files_button")}
               </span>
             </div>
+            <p className="mt-2 text-[11px] text-ink-faint">{t("upload_size_hint")}</p>
           </>
         )}
       </div>
