@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { UploadCloud, Loader2 } from "lucide-react";
+import { UploadCloud, Loader2, FileUp } from "lucide-react";
 import { useLang } from "@/lib/i18n-context";
 
 /**
@@ -9,6 +9,11 @@ import { useLang } from "@/lib/i18n-context";
  * handed back to the parent page (kept in React state, never localStorage)
  * so it can be re-sent on the actual push request later — see build spec
  * section 2.3 (no Vercel Blob, no server-side file persistence between steps).
+ *
+ * Accepts either a single .zip, or one/many loose files — loose files get
+ * bundled into an in-memory ZIP client-side (via JSZip) before being sent,
+ * so the rest of the app (analyze/diff/push endpoints) never has to know
+ * the difference.
  */
 export default function UploadZone({
   onAnalyzed,
@@ -25,17 +30,14 @@ export default function UploadZone({
   uploadingLabel?: string;
 }) {
   const { t } = useLang();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
+  const filesInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setDragging] = useState(false);
   const [isUploading, setUploading] = useState(false);
+  const [isZipping, setZipping] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleFile(file: File) {
-    setError(null);
-    if (!file.name.toLowerCase().endsWith(".zip")) {
-      setError(t("no_zip_error"));
-      return;
-    }
+  async function submit(file: File) {
     setUploading(true);
     try {
       const formData = new FormData();
@@ -56,10 +58,58 @@ export default function UploadZone({
     }
   }
 
+  /** One or more loose files (not already a .zip) — bundle client-side into a ZIP. */
+  async function zipAndSubmit(files: File[]) {
+    setError(null);
+    setZipping(true);
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+
+      for (const file of files) {
+        // Preserve folder structure if the browser gave us one (e.g. a
+        // dragged folder), otherwise just use the flat filename.
+        let relPath = (file as any).webkitRelativePath || file.name;
+        if (usedNames.has(relPath)) {
+          const dot = relPath.lastIndexOf(".");
+          relPath =
+            dot > 0
+              ? `${relPath.slice(0, dot)}-${usedNames.size}${relPath.slice(dot)}`
+              : `${relPath}-${usedNames.size}`;
+        }
+        usedNames.add(relPath);
+        zip.file(relPath, await file.arrayBuffer());
+      }
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const zippedFile = new File([blob], `upload-${Date.now()}.zip`, { type: "application/zip" });
+      setZipping(false);
+      await submit(zippedFile);
+    } catch (err: any) {
+      setZipping(false);
+      setError(String(err?.message || err));
+    }
+  }
+
+  function handleIncoming(fileList: FileList | File[]) {
+    setError(null);
+    const files = Array.from(fileList);
+    if (files.length === 0) return;
+
+    if (files.length === 1 && files[0].name.toLowerCase().endsWith(".zip")) {
+      submit(files[0]);
+      return;
+    }
+    zipAndSubmit(files);
+  }
+
+  const busy = isUploading || isZipping;
+
   return (
     <div>
       <div
-        onClick={() => inputRef.current?.click()}
+        onClick={() => filesInputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
@@ -68,8 +118,7 @@ export default function UploadZone({
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          const file = e.dataTransfer.files?.[0];
-          if (file) handleFile(file);
+          if (e.dataTransfer.files?.length) handleIncoming(e.dataTransfer.files);
         }}
         className={`relative flex cursor-pointer flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border-2 border-dashed px-6 py-12 text-center transition active:scale-[0.99] ${
           isDragging
@@ -77,7 +126,7 @@ export default function UploadZone({
             : "border-base-border bg-base-surface hover:border-ink-faint/50"
         }`}
       >
-        {isUploading ? (
+        {busy ? (
           <Loader2 size={28} strokeWidth={2} className="animate-spin text-harbor-orange" />
         ) : (
           <div className="flex h-12 w-12 items-center justify-center rounded-full border border-base-border bg-base-surface2 text-ink-dim">
@@ -85,25 +134,52 @@ export default function UploadZone({
           </div>
         )}
         <p className="font-display text-base font-medium text-ink">
-          {isUploading ? uploadingLabel || t("upload_uploading") : t("upload_title")}
+          {isZipping ? t("zipping_files") : busy ? uploadingLabel || t("upload_uploading") : t("upload_title")}
         </p>
-        {!isUploading && (
+        {!busy && (
           <>
             <span className="text-xs text-ink-faint">{t("upload_or")}</span>
-            <span className="rounded-lg bg-harbor-orange px-4 py-2 text-sm font-medium text-white shadow-glow-orange">
-              {t("upload_button")}
-            </span>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  zipInputRef.current?.click();
+                }}
+                className="flex items-center gap-1.5 rounded-lg bg-harbor-orange px-4 py-2 text-sm font-medium text-white shadow-glow-orange"
+              >
+                <UploadCloud size={14} /> {t("upload_button")}
+              </span>
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  filesInputRef.current?.click();
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-base-border bg-base-surface2 px-4 py-2 text-sm font-medium text-ink-dim"
+              >
+                <FileUp size={14} /> {t("upload_files_button")}
+              </span>
+            </div>
           </>
         )}
       </div>
+
       <input
-        ref={inputRef}
+        ref={zipInputRef}
         type="file"
         accept=".zip"
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFile(file);
+          if (e.target.files?.length) handleIncoming(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={filesInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.length) handleIncoming(e.target.files);
           e.target.value = "";
         }}
       />

@@ -2,11 +2,24 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { LogOut, RefreshCw, Loader2, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import {
+  LogOut,
+  RefreshCw,
+  Loader2,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  BookOpen,
+  Tag,
+  ScrollText,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import LanguageToggle from "@/components/LanguageToggle";
 import { useLang } from "@/lib/i18n-context";
+import { APP_VERSION } from "@/lib/version";
 
 export default function SettingsPage() {
   const { t } = useLang();
@@ -39,10 +52,21 @@ export default function SettingsPage() {
     }
   }
 
+  const aboutLinks = [
+    { href: "/settings/about", icon: Info, title: t("about_app_title"), desc: t("about_app_desc") },
+    { href: "/settings/help", icon: BookOpen, title: t("how_to_use_title"), desc: t("how_to_use_desc") },
+    { href: "/settings/version", icon: Tag, title: t("version_title"), desc: t("version_desc") },
+    { href: "/settings/license", icon: ScrollText, title: t("license_title"), desc: t("license_desc") },
+  ];
+
   return (
     <main className="min-h-dvh bg-base-bg pb-16">
       <Header />
       <div className="mx-auto max-w-2xl px-4 py-6">
+        <Link href="/" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-dim">
+          <ChevronLeft size={16} /> {t("back")}
+        </Link>
+
         <h1 className="font-display text-xl font-bold tracking-tight text-ink">{t("settings_title")}</h1>
 
         <section className="mt-5 rounded-2xl border border-base-border bg-base-surface p-4 shadow-card">
@@ -107,6 +131,31 @@ export default function SettingsPage() {
               {t("update_available")} — {t("update_reload")}
             </button>
           )}
+        </section>
+
+        <section className="mt-4">
+          <h2 className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-ink-faint">
+            {t("settings_about_section")}
+          </h2>
+          <div className="flex flex-col gap-2">
+            {aboutLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="flex items-center gap-3 rounded-2xl border border-base-border bg-base-surface p-4 shadow-card transition active:scale-[0.99]"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-base-surface2 text-ink-dim">
+                  <link.icon size={18} strokeWidth={1.75} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-ink">{link.title}</p>
+                  <p className="truncate text-xs text-ink-faint">{link.desc}</p>
+                </div>
+                <ChevronRight size={16} className="shrink-0 text-ink-faint" />
+              </Link>
+            ))}
+          </div>
+          <p className="mt-3 px-1 text-center text-xs text-ink-faint">HARBOR CARGO v{APP_VERSION}</p>
         </section>
       </div>
     </main>
