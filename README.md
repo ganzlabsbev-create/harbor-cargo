@@ -37,13 +37,13 @@ Create a new GitHub repository from your project.
 
 Open HARBOR CARGO and choose the GitHub tool.
 
-![Choose GitHub](public/docs/github-home.png)
+<img src="public/docs/github-home.png" width="280" alt="Choose GitHub">
 
 ### 2. Choose Create Repository
 
 Choose **Create a new repository**.
 
-![Choose repository action](public/docs/github-mode.png)
+<img src="public/docs/github-mode.png" width="280" alt="Choose repository action">
 
 ### 3. Select Your Project
 
@@ -51,7 +51,7 @@ Choose a ZIP file or select project files directly from your device.
 
 HARBOR analyzes the project and shows its file structure before creating the repository.
 
-![Select project files](public/docs/create-upload.png)
+<img src="public/docs/create-upload.png" width="280" alt="Select project files">
 
 ### 4. Configure and Create
 
@@ -59,7 +59,7 @@ Enter your repository name and choose whether the repository should be **Private
 
 Review the project, then confirm.
 
-![Configure repository](public/docs/create-settings.png)
+<img src="public/docs/create-settings.png" width="280" alt="Configure repository">
 
 Your new repository will be created on GitHub.
 
@@ -75,19 +75,19 @@ Use HARBOR to compare your local project with an existing repository and choose 
 
 Open HARBOR CARGO and choose the GitHub tool.
 
-![Choose GitHub](public/docs/github-home.png)
+<img src="public/docs/github-home.png" width="280" alt="Choose GitHub">
 
 ### 2. Choose Update Repository
 
 Choose **Update an existing repository**.
 
-![Choose repository action](public/docs/github-mode.png)
+<img src="public/docs/github-mode.png" width="280" alt="Choose repository action">
 
 ### 3. Select a Repository
 
 Choose the GitHub repository you want to update.
 
-![Select repository](public/docs/update-repository.png)
+<img src="public/docs/update-repository.png" width="280" alt="Select repository">
 
 ### 4. Import Your Project
 
@@ -95,7 +95,7 @@ Upload a ZIP file or select project files directly from your device.
 
 HARBOR compares the uploaded project with the selected repository.
 
-![Import project](public/docs/update-import.png)
+<img src="public/docs/update-import.png" width="280" alt="Import project">
 
 ### 5. Review and Confirm Changes
 
@@ -109,7 +109,7 @@ You can choose which files to:
 
 Review your selections, optionally add a commit message, and confirm the update.
 
-![Review changes](public/docs/update-changes.png)
+<img src="public/docs/update-changes.png" width="280" alt="Review changes">
 
 Your selected changes will be committed to GitHub.
 
