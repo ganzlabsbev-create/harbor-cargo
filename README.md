@@ -7,7 +7,7 @@ Netlify, ...) can be added later under `app/tools/*` without touching this
 one.
 
 ## Architecture highlights
-
+ 
 - **GitHub OAuth, relay-only.** The server exchanges the OAuth `code` for an
   access token (required, since `github.com/login/oauth/access_token` has no
   browser CORS support) and immediately AES‑256‑GCM encrypts it into an
