@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, IBM_Plex_Sans_Thai, Space_Grotesk } from "next/font/google";
 import { LangProvider } from "@/lib/i18n-context";
 import UpdateBanner from "@/components/UpdateBanner";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 // Self-hosted via next/font (downloaded + bundled at build time, no runtime
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
           <UpdateBanner />
         </LangProvider>
+        <Analytics />
       </body>
     </html>
   );
