@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  env: {
+  env: { 
     // Vercel sets VERCEL_GIT_COMMIT_SHA automatically on every deploy, so this
     // changes on its own with no extra build step. Date.now() is only a
     // fallback for hosts that don't provide it (e.g. plain `next build`
