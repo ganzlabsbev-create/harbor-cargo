@@ -41,6 +41,8 @@ const config: Config = {
       boxShadow: {
         "glow-orange": "0 0 0 1px rgba(250,101,34,0.35), 0 8px 24px -8px rgba(250,101,34,0.45)",
         "glow-blue": "0 0 0 1px rgba(5,96,208,0.35), 0 8px 24px -8px rgba(5,96,208,0.45)",
+        "glow-green": "0 0 0 1px rgba(34,197,94,0.35), 0 8px 24px -8px rgba(34,197,94,0.45)",
+        "glow-red": "0 0 0 1px rgba(239,68,68,0.35), 0 8px 24px -8px rgba(239,68,68,0.45)",
         card: "0 1px 0 rgba(255,255,255,0.03) inset, 0 12px 32px -16px rgba(0,0,0,0.6)",
       },
       backgroundImage: {

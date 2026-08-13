@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 import Header from "@/components/Header";
 import UploadZone from "@/components/UploadZone";
+import DiffTreeView, { DiffStatus, buildDiffTree } from "@/components/DiffTreeView";
 import { useLang } from "@/lib/i18n-context";
 
 interface RepoOption {
@@ -14,15 +15,35 @@ interface RepoOption {
   updated_at: string;
 }
 
+interface DiffPayload {
+  modified: string[];
+  zipOnly: string[];
+  repoOnly: string[];
+}
+
+function toggle(set: Set<string>, path: string): Set<string> {
+  const next = new Set(set);
+  if (next.has(path)) next.delete(path);
+  else next.add(path);
+  return next;
+}
+
 export default function UpdateRepoPage() {
   const { t } = useLang();
   const [repos, setRepos] = useState<RepoOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<RepoOption | null>(null);
+
   const [file, setFile] = useState<File | null>(null);
-  const [analysis, setAnalysis] = useState<any | null>(null);
+  const [diff, setDiff] = useState<DiffPayload | null>(null);
+  const [repoEmpty, setRepoEmpty] = useState(false);
+
+  const [selectedReplace, setSelectedReplace] = useState<Set<string>>(new Set());
+  const [selectedAdd, setSelectedAdd] = useState<Set<string>>(new Set());
+  const [selectedDelete, setSelectedDelete] = useState<Set<string>>(new Set());
+
   const [commitMessage, setCommitMessage] = useState("");
-  const [pushing, setPushing] = useState(false);
+  const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ commitUrl: string } | null>(null);
 
@@ -36,32 +57,58 @@ export default function UpdateRepoPage() {
       .catch((err) => setLoadError(String(err?.message || err)));
   }, []);
 
-  function handleAnalyzed(f: File, data: any) {
+  function handleDiffed(f: File, data: any) {
     setFile(f);
-    setAnalysis(data);
+    setDiff(data.diff);
+    setRepoEmpty(Boolean(data.repoEmpty));
+    // Default: select everything so a single tap commits the whole update,
+    // same as the previous behavior — user can uncheck what they don't want.
+    setSelectedReplace(new Set(data.diff.modified));
+    setSelectedAdd(new Set(data.diff.zipOnly));
+    setSelectedDelete(new Set());
   }
 
-  async function handlePush() {
-    if (!file || !selected) return;
-    setPushing(true);
+  const diffTree = useMemo(() => {
+    if (!diff) return [];
+    const items: { path: string; status: DiffStatus }[] = [
+      ...diff.modified.map((p) => ({ path: p, status: "modified" as DiffStatus })),
+      ...diff.zipOnly.map((p) => ({ path: p, status: "add" as DiffStatus })),
+      ...diff.repoOnly.map((p) => ({ path: p, status: "unchanged" as DiffStatus })),
+    ];
+    return buildDiffTree(items);
+  }, [diff]);
+
+  const addCount = selectedAdd.size;
+  const replaceCount = selectedReplace.size;
+  const deleteCount = selectedDelete.size;
+  const totalChanges = addCount + replaceCount + deleteCount;
+
+  async function handleCommit() {
+    if (!file || !selected || totalChanges === 0) return;
+    setCommitting(true);
     setError(null);
     try {
       const [owner, repo] = selected.full_name.split("/");
+      const changes = [
+        ...[...selectedReplace].map((p) => ({ path: p, action: "replace" })),
+        ...[...selectedAdd].map((p) => ({ path: p, action: "add" })),
+        ...[...selectedDelete].map((p) => ({ path: p, action: "delete" })),
+      ];
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("mode", "update");
       formData.append("owner", owner);
       formData.append("repo", repo);
       formData.append("branch", selected.default_branch);
       formData.append("commitMessage", commitMessage || t("commit_message_placeholder"));
-      const res = await fetch("/api/push", { method: "POST", body: formData });
+      formData.append("changes", JSON.stringify(changes));
+      const res = await fetch("/api/commit-diff", { method: "POST", body: formData });
       const data = await res.json();
-      if (!data.ok) throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "push_failed");
+      if (!data.ok) throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "commit_failed");
       setResult({ commitUrl: data.commitUrl });
     } catch (err: any) {
       setError(String(err?.message || err));
     } finally {
-      setPushing(false);
+      setCommitting(false);
     }
   }
 
@@ -121,49 +168,89 @@ export default function UpdateRepoPage() {
                   {t("branch_label")}: {selected.default_branch}
                 </p>
               </div>
-              <button onClick={() => setSelected(null)} className="text-xs text-harbor-orange">
+              <button
+                onClick={() => {
+                  setSelected(null);
+                  setFile(null);
+                  setDiff(null);
+                }}
+                className="text-xs text-harbor-orange"
+              >
                 {t("change_repo")}
               </button>
             </div>
 
-            {!analysis ? (
-              <UploadZone onAnalyzed={handleAnalyzed} />
+            {!diff ? (
+              <UploadZone
+                onAnalyzed={handleDiffed}
+                endpoint="/api/diff"
+                extraFields={{ owner: selected.full_name.split("/")[0], repo: selected.full_name.split("/")[1], branch: selected.default_branch }}
+                uploadingLabel={t("loading_diff")}
+              />
             ) : (
               <>
-                <div className="rounded-2xl border border-base-border bg-base-surface p-4 shadow-card">
-                  <p className="text-sm text-ink-dim">
-                    {t("detected")}: <span className="font-medium text-ink">{analysis.framework}</span>
+                {repoEmpty && <p className="text-xs text-ink-faint">{t("repo_empty_note")}</p>}
+
+                <div className="rounded-2xl border border-base-border bg-base-surface p-3 shadow-card">
+                  <p className="mb-1 px-1 text-[11px] uppercase tracking-wide text-ink-faint">
+                    {t("file_structure")}
                   </p>
-                  <p className="mt-1 text-sm text-ink-dim">
-                    {analysis.fileCount} {t("files_count")}
-                  </p>
+                  <div className="max-h-[28rem] overflow-y-auto">
+                    <DiffTreeView
+                      nodes={diffTree}
+                      selectedReplace={selectedReplace}
+                      selectedAdd={selectedAdd}
+                      selectedDelete={selectedDelete}
+                      onToggleReplace={(p) => setSelectedReplace((s) => toggle(s, p))}
+                      onToggleAdd={(p) => setSelectedAdd((s) => toggle(s, p))}
+                      onToggleDelete={(p) => setSelectedDelete((s) => toggle(s, p))}
+                    />
+                  </div>
                 </div>
 
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-ink-dim">{t("commit_message_label")}</span>
+                <div className="rounded-2xl border border-base-border bg-base-surface p-4 shadow-card">
+                  <p className="mb-2 text-xs font-medium text-ink-dim">{t("diff_summary_title")}</p>
+                  <div className="mb-3 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full bg-accent-green/10 px-2.5 py-1 text-accent-green">
+                      {t("summary_add")} {addCount} {t("summary_files")}
+                    </span>
+                    <span className="rounded-full bg-harbor-orange/10 px-2.5 py-1 text-harbor-orange">
+                      {t("summary_replace")} {replaceCount} {t("summary_files")}
+                    </span>
+                    <span className="rounded-full bg-accent-red/10 px-2.5 py-1 text-accent-red">
+                      {t("summary_delete")} {deleteCount} {t("summary_files")}
+                    </span>
+                  </div>
+
+                  <label className="mb-1.5 block text-xs font-medium text-ink-dim">
+                    {t("commit_message_label")}
+                  </label>
                   <input
                     value={commitMessage}
                     onChange={(e) => setCommitMessage(e.target.value)}
                     placeholder={t("commit_message_placeholder")}
-                    className="rounded-xl border border-base-border bg-base-surface px-4 py-3 text-ink outline-none focus:border-harbor-orange"
+                    className="mb-4 w-full rounded-xl border border-base-border bg-base-surface2 px-4 py-3 text-sm text-ink outline-none focus:border-harbor-orange"
                   />
-                </label>
 
-                {error && <p className="text-sm text-accent-red">{error}</p>}
+                  {error && <p className="mb-3 text-sm text-accent-red">{error}</p>}
 
-                <button
-                  onClick={handlePush}
-                  disabled={pushing}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-harbor-orange px-5 py-3.5 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
-                >
-                  {pushing ? (
-                    <>
-                      <Loader2 size={18} className="animate-spin" /> {t("pushing")}
-                    </>
-                  ) : (
-                    t("confirm_push_button")
+                  <button
+                    onClick={handleCommit}
+                    disabled={committing || totalChanges === 0}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-harbor-orange px-5 py-3.5 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
+                  >
+                    {committing ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" /> {t("committing")}
+                      </>
+                    ) : (
+                      t("confirm_commit_button")
+                    )}
+                  </button>
+                  {totalChanges === 0 && (
+                    <p className="mt-2 text-center text-[11px] text-ink-faint">{t("no_changes_selected")}</p>
                   )}
-                </button>
+                </div>
               </>
             )}
           </div>

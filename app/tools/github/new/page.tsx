@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronLeft, CheckCircle2, ExternalLink, Loader2, FolderTree } from "lucide-react";
 import Header from "@/components/Header";
 import UploadZone from "@/components/UploadZone";
+import TreeView from "@/components/TreeView";
 import { useLang } from "@/lib/i18n-context";
 
 interface AnalyzeResult {
@@ -95,6 +96,9 @@ export default function NewRepoPage() {
                   )}
                   <div className="mt-3 flex items-center gap-1 text-xs text-ink-faint">
                     <FolderTree size={14} /> {t("file_structure")}
+                  </div>
+                  <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-base-border bg-base-bg p-2">
+                    <TreeView nodes={analysis.tree} />
                   </div>
                 </div>
 

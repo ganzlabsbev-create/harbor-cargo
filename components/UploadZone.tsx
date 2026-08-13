@@ -12,8 +12,17 @@ import { useLang } from "@/lib/i18n-context";
  */
 export default function UploadZone({
   onAnalyzed,
+  endpoint = "/api/upload",
+  extraFields,
+  uploadingLabel,
 }: {
   onAnalyzed: (file: File, result: any) => void;
+  /** Lets the "update repo" flow point this at /api/diff instead. */
+  endpoint?: string;
+  /** Extra form fields to send alongside the file (e.g. owner/repo/branch). */
+  extraFields?: Record<string, string>;
+  /** Overrides the "Analyzing..." label — e.g. "Comparing against repo...". */
+  uploadingLabel?: string;
 }) {
   const { t } = useLang();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -31,7 +40,10 @@ export default function UploadZone({
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (extraFields) {
+        for (const [key, value] of Object.entries(extraFields)) formData.append(key, value);
+      }
+      const res = await fetch(endpoint, { method: "POST", body: formData });
       const data = await res.json();
       if (!data.ok) {
         throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "upload_failed");
@@ -73,7 +85,7 @@ export default function UploadZone({
           </div>
         )}
         <p className="font-display text-base font-medium text-ink">
-          {isUploading ? t("upload_uploading") : t("upload_title")}
+          {isUploading ? uploadingLabel || t("upload_uploading") : t("upload_title")}
         </p>
         {!isUploading && (
           <>
