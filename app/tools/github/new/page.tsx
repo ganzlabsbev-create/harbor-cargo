@@ -4,9 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, CheckCircle2, ExternalLink, Loader2, FolderTree } from "lucide-react";
 import Header from "@/components/Header";
-import UploadZone from "@/components/UploadZone";
+import UploadZone, { UploadedBlob } from "@/components/UploadZone";
 import TreeView from "@/components/TreeView";
 import { useLang } from "@/lib/i18n-context";
+import { useBlobCleanup } from "@/lib/use-blob-cleanup";
 
 interface AnalyzeResult {
   ok: true;
@@ -18,7 +19,7 @@ interface AnalyzeResult {
 
 export default function NewRepoPage() {
   const { t } = useLang();
-  const [file, setFile] = useState<File | null>(null);
+  const [blob, setBlob] = useState<UploadedBlob | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
   const [repoName, setRepoName] = useState("");
   const [isPrivate, setIsPrivate] = useState(true);
@@ -26,25 +27,33 @@ export default function NewRepoPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ repoUrl: string } | null>(null);
 
-  function handleAnalyzed(f: File, data: AnalyzeResult) {
-    setFile(f);
+  // Deletes the uploaded blob if the user leaves without ever pushing.
+  useBlobCleanup(result ? null : blob);
+
+  function handleAnalyzed(b: UploadedBlob, data: AnalyzeResult, fileName: string) {
+    setBlob(b);
     setAnalysis(data);
     if (!repoName) {
-      setRepoName(f.name.replace(/\.zip$/i, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-"));
+      setRepoName(fileName.replace(/\.zip$/i, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-"));
     }
   }
 
   async function handlePush() {
-    if (!file || !repoName) return;
+    if (!blob || !repoName) return;
     setPushing(true);
     setError(null);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("mode", "new");
-      formData.append("repoName", repoName);
-      formData.append("private", String(isPrivate));
-      const res = await fetch("/api/push", { method: "POST", body: formData });
+      const res = await fetch("/api/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          blobUrl: blob.url,
+          blobPathname: blob.pathname,
+          mode: "new",
+          repoName,
+          private: String(isPrivate),
+        }),
+      });
       const data = await res.json();
       if (!data.ok) throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "push_failed");
       setResult({ repoUrl: data.repoUrl });

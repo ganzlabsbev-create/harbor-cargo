@@ -18,6 +18,9 @@ async function ensureSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `;
+  // Upload rate limiting (see lib/rate-limit.ts) — the next time this user
+  // is allowed to start an upload. NULL means no cooldown in effect.
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS next_upload_at TIMESTAMPTZ;`;
   await sql`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -71,4 +74,20 @@ export async function listProjectsForUser(userId: number, limit = 20): Promise<P
     SELECT * FROM projects WHERE user_id = ${userId} ORDER BY pushed_at DESC LIMIT ${limit}
   `;
   return rows;
+}
+
+export async function getNextUploadAt(userId: number): Promise<Date | null> {
+  await ensureSchema();
+  const { rows } = await sql<{ next_upload_at: string | null }>`
+    SELECT next_upload_at FROM users WHERE github_id = ${userId}
+  `;
+  const value = rows[0]?.next_upload_at;
+  return value ? new Date(value) : null;
+}
+
+export async function setNextUploadAt(userId: number, next: Date): Promise<void> {
+  await ensureSchema();
+  await sql`
+    UPDATE users SET next_upload_at = ${next.toISOString()} WHERE github_id = ${userId}
+  `;
 }

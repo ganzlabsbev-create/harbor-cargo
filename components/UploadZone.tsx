@@ -1,14 +1,24 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { UploadCloud, Loader2, FileUp } from "lucide-react";
 import { useLang } from "@/lib/i18n-context";
 
+export interface UploadedBlob {
+  url: string;
+  pathname: string;
+}
+
+const MAX_FILE_BYTES = 200 * 1024 * 1024; // keep in sync with app/api/upload/blob-token/route.ts
+
 /**
- * Handles the "upload + analyze" step only. The selected File object is
- * handed back to the parent page (kept in React state, never localStorage)
- * so it can be re-sent on the actual push request later — see build spec
- * section 2.3 (no Vercel Blob, no server-side file persistence between steps).
+ * Handles the "upload + analyze" step only. The file is uploaded directly
+ * to Vercel Blob storage from the browser (so there's no ~4.5MB server body
+ * limit), then the resulting blob URL is handed to `endpoint` to analyze.
+ * The blob itself is kept alive server-side until the push/commit step
+ * consumes and deletes it — see lib/use-blob-cleanup.ts for what happens if
+ * the user abandons the flow before that.
  *
  * Accepts either a single .zip, or one/many loose files — loose files get
  * bundled into an in-memory ZIP client-side (via JSZip) before being sent,
@@ -21,10 +31,10 @@ export default function UploadZone({
   extraFields,
   uploadingLabel,
 }: {
-  onAnalyzed: (file: File, result: any) => void;
+  onAnalyzed: (blob: UploadedBlob, result: any, fileName: string) => void;
   /** Lets the "update repo" flow point this at /api/diff instead. */
   endpoint?: string;
-  /** Extra form fields to send alongside the file (e.g. owner/repo/branch). */
+  /** Extra fields to send alongside the blob reference (e.g. owner/repo/branch). */
   extraFields?: Record<string, string>;
   /** Overrides the "Analyzing..." label — e.g. "Comparing against repo...". */
   uploadingLabel?: string;
@@ -37,20 +47,44 @@ export default function UploadZone({
   const [isZipping, setZipping] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(file: File) {
+  async function submit(file: File, kind: "zip" | "loose", fileCount: number) {
+    if (file.size > MAX_FILE_BYTES) {
+      setError(t("file_too_large_message"));
+      return;
+    }
+
     setUploading(true);
+    setError(null);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (extraFields) {
-        for (const [key, value] of Object.entries(extraFields)) formData.append(key, value);
+      const rateLimitRes = await fetch("/api/upload/rate-limit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, fileCount }),
+      });
+      const rateLimitData = await rateLimitRes.json();
+      if (!rateLimitData.ok) {
+        if (rateLimitData.error === "rate_limited") {
+          throw new Error(t("rate_limited_message").replace("{seconds}", String(rateLimitData.retryAfterSeconds)));
+        }
+        throw new Error(rateLimitData.error || "rate_limit_check_failed");
       }
-      const res = await fetch(endpoint, { method: "POST", body: formData });
+
+      const blobResult = await upload(`uploads/${crypto.randomUUID()}.zip`, file, {
+        access: "public",
+        handleUploadUrl: "/api/upload/blob-token",
+      });
+      const blobRef: UploadedBlob = { url: blobResult.url, pathname: blobResult.pathname };
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blobUrl: blobRef.url, blobPathname: blobRef.pathname, ...(extraFields || {}) }),
+      });
       const data = await res.json();
       if (!data.ok) {
         throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "upload_failed");
       }
-      onAnalyzed(file, data);
+      onAnalyzed(blobRef, data, file.name);
     } catch (err: any) {
       setError(String(err?.message || err));
     } finally {
@@ -85,7 +119,7 @@ export default function UploadZone({
       const blob = await zip.generateAsync({ type: "blob" });
       const zippedFile = new File([blob], `upload-${Date.now()}.zip`, { type: "application/zip" });
       setZipping(false);
-      await submit(zippedFile);
+      await submit(zippedFile, "loose", files.length);
     } catch (err: any) {
       setZipping(false);
       setError(String(err?.message || err));
@@ -98,7 +132,7 @@ export default function UploadZone({
     if (files.length === 0) return;
 
     if (files.length === 1 && files[0].name.toLowerCase().endsWith(".zip")) {
-      submit(files[0]);
+      submit(files[0], "zip", 1);
       return;
     }
     zipAndSubmit(files);

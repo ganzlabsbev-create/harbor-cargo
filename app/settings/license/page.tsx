@@ -12,6 +12,7 @@ const DEPENDENCIES: { name: string; license: string }[] = [
   { name: "react-dom", license: "MIT" },
   { name: "adm-zip", license: "MIT" },
   { name: "@vercel/postgres", license: "Apache-2.0" },
+  { name: "@vercel/blob", license: "Apache-2.0" },
   { name: "lucide-react", license: "ISC" },
   { name: "nanoid", license: "MIT" },
   { name: "jszip", license: "MIT OR GPL-3.0" },
@@ -122,11 +123,6 @@ export default function LicensePage() {
               </li>
             ))}
           </ul>
-          <p className="text-xs text-ink-faint">
-            {th
-              ? "รายการนี้อ้างอิงจาก package.json ล่าสุด — แนะนำให้รัน npx license-checker --summary ซ้ำอีกครั้งก่อนเผยแพร่ เพื่อยืนยันว่าไม่มีอะไรเปลี่ยนแปลง"
-              : "This list is based on the current package.json — re-run npx license-checker --summary before publishing to confirm nothing has changed."}
-          </p>
         </Section>
 
         <Section title={th ? "6. ข้อจำกัดความรับผิดชอบ" : "6. Disclaimer"}>

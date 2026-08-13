@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.5.0";
+export const APP_VERSION = "0.6.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.6.0",
+    date: "2026-08",
+    notes: [
+      "Uploads now go straight to Vercel Blob storage from the browser instead of through the server, removing the ~4.5MB size ceiling on ZIP uploads",
+      "Added a per-user cooldown before the next upload is allowed, to prevent abuse (60s for a .zip, 5s per file for a loose-files bundle)",
+      "Uploaded files are now cleaned up automatically — deleted right after a push/commit completes, or if you leave the page without ever pushing",
+    ],
+  },
   {
     version: "0.5.0",
     date: "2026-08",

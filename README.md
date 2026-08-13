@@ -13,10 +13,16 @@ one.
   browser CORS support) and immediately AES‑256‑GCM encrypts it into an
   `httpOnly` session cookie. The token is never logged, cached, or written to
   the database. See `lib/session.ts` and `app/api/auth/github/callback/route.ts`.
-- **No Vercel Blob.** "Upload + analyze" and "confirm push" are two separate
-  requests, but the ZIP itself only ever lives in the browser's React state
-  between them — it's re-sent on the push request. See `components/UploadZone.tsx`
-  and `lib/zip.ts`.
+- **Uploads go straight to Vercel Blob.** The browser uploads the ZIP
+  directly to Blob storage (bypassing the ~4.5MB serverless function body
+  limit), then the analyze/diff/push/commit-diff routes fetch it from there.
+  The blob is deleted again once it's been used — see `lib/blob-fetch.ts`,
+  `lib/use-blob-cleanup.ts`, `app/api/upload/blob-token/route.ts`, and
+  `app/api/upload/blob-cleanup/route.ts`.
+- **Per-user upload cooldown.** Before every upload the client calls
+  `/api/upload/rate-limit`, which enforces a cooldown before the next one is
+  allowed (60s for a `.zip`, 5s per file for a loose-files bundle). See
+  `lib/rate-limit.ts`.
 - **Postgres stores no secrets.** `users` and `projects` tables are for
   display/history only.
 
@@ -36,6 +42,7 @@ npm run dev
 | `GITHUB_OAUTH_CLIENT_SECRET` | Same OAuth App |
 | `SESSION_ENCRYPTION_KEY` | Generate a fresh secret: `openssl rand -base64 32` |
 | `POSTGRES_URL` | Added automatically once you attach **Vercel Postgres** under the project's Storage tab |
+| `BLOB_READ_WRITE_TOKEN` | Added automatically once you attach **Vercel Blob** under the project's Storage tab |
 | `NEXT_PUBLIC_BUILD_ID` | Set automatically by `npm run build` (via `scripts/set-build-id.js`) — don't set it yourself |
 
 When creating the GitHub OAuth App:
@@ -43,7 +50,7 @@ When creating the GitHub OAuth App:
 - **Authorization callback URL**: `https://<your-domain>/api/auth/github/callback`
 
 No longer needed (removed from this project): `APP_ACCESS_CODE`, `VERCEL_TOKEN`,
-a static `GITHUB_TOKEN`, `BLOB_READ_WRITE_TOKEN`.
+a static `GITHUB_TOKEN`.
 
 ## What was carried over from the previous project (AoTo-ZIP-GanZ-Labs)
 
@@ -57,9 +64,9 @@ a static `GITHUB_TOKEN`, `BLOB_READ_WRITE_TOKEN`.
   `listRepos` / `getAuthenticatedUser`
 - `lib/i18n.ts`, `lib/i18n-context.tsx` — same provider/hook shape, all copy
   rewritten for HARBOR CARGO
-- `components/UploadZone.tsx` — same drag/drop + analyze logic, restyled and
-  changed to hand the `File` back to the parent page instead of only firing a
-  callback with the analysis result
+- `components/UploadZone.tsx` — same drag/drop + analyze logic, restyled;
+  now uploads straight to Vercel Blob and hands the blob reference (not the
+  raw `File`) back to the parent page alongside the analysis result
 
 **Written from scratch**
 - Everything else: pages, layout, theme, `lib/session.ts`, `lib/db.ts`

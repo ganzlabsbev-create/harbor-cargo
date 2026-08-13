@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 import Header from "@/components/Header";
-import UploadZone from "@/components/UploadZone";
+import UploadZone, { UploadedBlob } from "@/components/UploadZone";
 import DiffTreeView, { DiffStatus, buildDiffTree } from "@/components/DiffTreeView";
 import { useLang } from "@/lib/i18n-context";
+import { cleanupBlob, useBlobCleanup } from "@/lib/use-blob-cleanup";
 
 interface RepoOption {
   name: string;
@@ -34,7 +35,7 @@ export default function UpdateRepoPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<RepoOption | null>(null);
 
-  const [file, setFile] = useState<File | null>(null);
+  const [blob, setBlob] = useState<UploadedBlob | null>(null);
   const [diff, setDiff] = useState<DiffPayload | null>(null);
   const [repoEmpty, setRepoEmpty] = useState(false);
 
@@ -57,8 +58,11 @@ export default function UpdateRepoPage() {
       .catch((err) => setLoadError(String(err?.message || err)));
   }, []);
 
-  function handleDiffed(f: File, data: any) {
-    setFile(f);
+  // Deletes the uploaded blob if the user leaves without ever committing.
+  useBlobCleanup(result ? null : blob);
+
+  function handleDiffed(b: UploadedBlob, data: any) {
+    setBlob(b);
     setDiff(data.diff);
     setRepoEmpty(Boolean(data.repoEmpty));
     // Default: select everything so a single tap commits the whole update,
@@ -84,7 +88,7 @@ export default function UpdateRepoPage() {
   const totalChanges = addCount + replaceCount + deleteCount;
 
   async function handleCommit() {
-    if (!file || !selected || totalChanges === 0) return;
+    if (!blob || !selected || totalChanges === 0) return;
     setCommitting(true);
     setError(null);
     try {
@@ -94,14 +98,19 @@ export default function UpdateRepoPage() {
         ...[...selectedAdd].map((p) => ({ path: p, action: "add" })),
         ...[...selectedDelete].map((p) => ({ path: p, action: "delete" })),
       ];
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("owner", owner);
-      formData.append("repo", repo);
-      formData.append("branch", selected.default_branch);
-      formData.append("commitMessage", commitMessage || t("commit_message_placeholder"));
-      formData.append("changes", JSON.stringify(changes));
-      const res = await fetch("/api/commit-diff", { method: "POST", body: formData });
+      const res = await fetch("/api/commit-diff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          blobUrl: blob.url,
+          blobPathname: blob.pathname,
+          owner,
+          repo,
+          branch: selected.default_branch,
+          commitMessage: commitMessage || t("commit_message_placeholder"),
+          changes,
+        }),
+      });
       const data = await res.json();
       if (!data.ok) throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "commit_failed");
       setResult({ commitUrl: data.commitUrl });
@@ -170,8 +179,12 @@ export default function UpdateRepoPage() {
               </div>
               <button
                 onClick={() => {
+                  // The uploaded blob is only reused by /api/commit-diff — if
+                  // we're leaving before that, nothing will ever delete it
+                  // otherwise, so clean it up explicitly here.
+                  if (blob) cleanupBlob(blob.pathname);
                   setSelected(null);
-                  setFile(null);
+                  setBlob(null);
                   setDiff(null);
                 }}
                 className="text-xs text-harbor-orange"

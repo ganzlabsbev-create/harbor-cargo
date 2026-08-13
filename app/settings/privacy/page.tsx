@@ -72,17 +72,33 @@ export default function PrivacyPage() {
 
         <Section title={th ? "3. ไฟล์ที่อัปโหลด" : "3. Uploaded files"}>
           {th ? (
-            <p>
-              ไฟล์ที่คุณอัปโหลดจะถูกแตกไฟล์ไว้ในพื้นที่ชั่วคราวบนเซิร์ฟเวอร์ เฉพาะช่วงเวลาของ request
-              นั้นๆ เท่านั้น ใช้เพื่อ push ขึ้น repository ที่คุณเลือก แล้วลบทิ้งทันที ไม่มีการเก็บสำเนา
-              เนื้อหาไฟล์ไว้หลังจากนั้น
-            </p>
+            <>
+              <p>
+                ไฟล์ ZIP ที่คุณอัปโหลดจะถูกส่งขึ้น Vercel Blob storage ชั่วคราวก่อน (ที่อยู่ไฟล์เป็นสุ่ม
+                คาดเดาไม่ได้) เพื่อให้รองรับไฟล์ขนาดใหญ่ จากนั้นระบบจะดึงมาแตกไฟล์ในพื้นที่ชั่วคราวบน
+                เซิร์ฟเวอร์เพื่อวิเคราะห์และ push ขึ้น repository ที่คุณเลือก
+              </p>
+              <p>
+                เมื่อ push เสร็จ (ไม่ว่าจะสำเร็จหรือไม่) ไฟล์จะถูกลบออกจาก Blob storage และพื้นที่ชั่วคราว
+                ทันที หากคุณอัปโหลดแล้วไม่กด push/commit เลย (เช่นปิดแท็บไปกลางทาง) ไฟล์จะถูกลบเช่นกันเมื่อ
+                คุณออกจากหน้านั้น ไม่มีการเก็บสำเนาเนื้อหาไฟล์ไว้ถาวร
+              </p>
+            </>
           ) : (
-            <p>
-              Uploaded files are extracted to temporary server storage only for the duration of a
-              single request, used to push to your chosen GitHub repository, then deleted
-              immediately. No copy of the file contents is retained afterward.
-            </p>
+            <>
+              <p>
+                Uploaded ZIPs are first sent to Vercel Blob storage temporarily (at an
+                unguessable, randomly-generated path) to support larger files. The server then
+                fetches it from there to extract, analyze, and push to your chosen GitHub
+                repository.
+              </p>
+              <p>
+                Once the push is done (whether it succeeds or fails), the file is deleted from
+                Blob storage and temporary server storage immediately. If you upload but never
+                push/commit (e.g. you close the tab partway through), it's also deleted when you
+                leave that page. No copy of the file contents is kept permanently.
+              </p>
+            </>
           )}
         </Section>
 

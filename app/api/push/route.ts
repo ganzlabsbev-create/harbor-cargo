@@ -3,16 +3,21 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { nanoid } from "nanoid";
+import { del } from "@vercel/blob";
 import { getSession } from "@/lib/session";
 import { extractZip, listAllFiles } from "@/lib/zip";
 import { detectFramework } from "@/lib/framework-detect";
 import { createRepoIfNeeded, pushFilesToRepo, sanitizeRepoName } from "@/lib/github";
 import { recordProjectPush } from "@/lib/db";
+import { fetchBlobBuffer } from "@/lib/blob-fetch";
 
 /**
- * Receives the ZIP again (re-sent from client state, per section 2.3) plus
- * the push target, extracts it fresh in /tmp, and pushes via the Git Data
- * API using the caller's own OAuth token.
+ * Reads the already-uploaded ZIP from Blob storage (see
+ * components/UploadZone.tsx and /api/upload) plus the push target, extracts
+ * it fresh in /tmp, and pushes via the Git Data API using the caller's own
+ * OAuth token. The blob is always deleted once this request is done with
+ * it — success or failure — so nothing lingers in storage; a failed push
+ * means the ZIP has to be re-uploaded to retry.
  *
  * mode="new"    -> repoName, private
  * mode="update" -> owner, repo, branch, commitMessage
@@ -21,24 +26,25 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "not_authenticated" }, { status: 401 });
 
-  const formData = await req.formData();
-  const file = formData.get("file");
-  const mode = formData.get("mode");
-  if (!(file instanceof File)) {
+  const body = await req.json().catch(() => null);
+  const blobUrl = body?.blobUrl;
+  const blobPathname = body?.blobPathname;
+  const mode = body?.mode;
+  if (!blobUrl || !blobPathname) {
     return NextResponse.json({ ok: false, error: "no_file" }, { status: 400 });
   }
 
   const extractDir = path.join(os.tmpdir(), `harbor-push-${nanoid()}`);
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const buffer = await fetchBlobBuffer(blobUrl);
     const extracted = extractZip(buffer, extractDir);
     const detection = detectFramework(extracted.extractDir, extracted.packageJson);
     const relativeFiles = listAllFiles(extracted.extractDir);
 
     if (mode === "new") {
-      const rawName = String(formData.get("repoName") || "");
+      const rawName = String(body?.repoName || "");
       const repoName = sanitizeRepoName(rawName);
-      const isPrivate = String(formData.get("private")) !== "false";
+      const isPrivate = String(body?.private) !== "false";
       if (!repoName) return NextResponse.json({ ok: false, error: "invalid_repo_name" }, { status: 400 });
 
       const { owner, repo } = await createRepoIfNeeded(session.token, session.login, repoName, isPrivate);
@@ -56,9 +62,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (mode === "update") {
-      const owner = String(formData.get("owner") || "");
-      const repo = String(formData.get("repo") || "");
-      const commitMessage = String(formData.get("commitMessage") || "Update via HARBOR CARGO");
+      const owner = String(body?.owner || "");
+      const repo = String(body?.repo || "");
+      const commitMessage = String(body?.commitMessage || "Update via HARBOR CARGO");
       if (!owner || !repo) return NextResponse.json({ ok: false, error: "missing_repo_target" }, { status: 400 });
 
       const repoUrl = await pushFilesToRepo(session.token, owner, repo, extracted.extractDir, relativeFiles, commitMessage);
@@ -79,5 +85,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "push_failed", detail: String(err?.message || err) }, { status: 500 });
   } finally {
     fs.promises.rm(extractDir, { recursive: true, force: true }).catch(() => {});
+    await del(blobPathname).catch(() => {});
   }
 }
