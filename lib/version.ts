@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.6.0";
+export const APP_VERSION = "0.7.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.7.0",
+    date: "2026-08",
+    notes: [
+      "GitHub errors now show a plain-language message (expired session, name already taken, rate limited, etc.) instead of the raw API response",
+      "An unreadable/corrupted ZIP file now shows a clear message instead of a generic failure",
+    ],
+  },
   {
     version: "0.6.0",
     date: "2026-08",

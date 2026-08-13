@@ -7,7 +7,7 @@ import { del } from "@vercel/blob";
 import { getSession } from "@/lib/session";
 import { extractZip, listAllFiles } from "@/lib/zip";
 import { detectFramework } from "@/lib/framework-detect";
-import { createRepoIfNeeded, pushFilesToRepo, sanitizeRepoName } from "@/lib/github";
+import { createRepoIfNeeded, pushFilesToRepo, sanitizeRepoName, GitHubApiError } from "@/lib/github";
 import { recordProjectPush } from "@/lib/db";
 import { fetchBlobBuffer } from "@/lib/blob-fetch";
 
@@ -37,7 +37,15 @@ export async function POST(req: NextRequest) {
   const extractDir = path.join(os.tmpdir(), `harbor-push-${nanoid()}`);
   try {
     const buffer = await fetchBlobBuffer(blobUrl);
-    const extracted = extractZip(buffer, extractDir);
+    let extracted;
+    try {
+      extracted = extractZip(buffer, extractDir);
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "invalid_zip", detail: "This file couldn't be read as a ZIP. Try re-uploading it." },
+        { status: 400 }
+      );
+    }
     const detection = detectFramework(extracted.extractDir, extracted.packageJson);
     const relativeFiles = listAllFiles(extracted.extractDir);
 
@@ -82,6 +90,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: false, error: "invalid_mode" }, { status: 400 });
   } catch (err: any) {
+    if (err instanceof GitHubApiError) {
+      return NextResponse.json({ ok: false, error: err.code, detail: err.message }, { status: err.status >= 400 ? err.status : 500 });
+    }
     return NextResponse.json({ ok: false, error: "push_failed", detail: String(err?.message || err) }, { status: 500 });
   } finally {
     fs.promises.rm(extractDir, { recursive: true, force: true }).catch(() => {});

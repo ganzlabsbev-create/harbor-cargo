@@ -17,11 +17,67 @@ function headers(token: string) {
   };
 }
 
+/**
+ * Thrown by gh() instead of a bare Error. `code` is a stable machine-readable
+ * reason (used by the frontend to decide things like "show a re-login
+ * button"), `message` is already safe to show to the user as-is — no raw
+ * GitHub API text ever reaches the UI.
+ */
+export class GitHubApiError extends Error {
+  status: number;
+  code: string;
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.name = "GitHubApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/** Maps a failed GitHub API response into a user-friendly GitHubApiError. */
+function friendlyGithubError(status: number, pathname: string, rawText: string): GitHubApiError {
+  let githubMessage = "";
+  try {
+    githubMessage = JSON.parse(rawText)?.message || "";
+  } catch {
+    // response wasn't JSON — ignore, fall back to generic messages below
+  }
+
+  if (status === 401) {
+    return new GitHubApiError(status, "github_auth_expired", "Your GitHub session has expired. Please sign in again.");
+  }
+  if (status === 403 && /rate limit/i.test(githubMessage)) {
+    return new GitHubApiError(status, "github_rate_limited", "GitHub's rate limit was reached. Please wait a few minutes and try again.");
+  }
+  if (status === 403) {
+    return new GitHubApiError(status, "github_forbidden", "GitHub denied this action — HARBOR CARGO may no longer have access to this repository.");
+  }
+  if (status === 404) {
+    return new GitHubApiError(status, "github_not_found", "That repository couldn't be found, or you no longer have access to it.");
+  }
+  if (status === 409) {
+    return new GitHubApiError(status, "github_conflict", "The repository changed on GitHub while this was in progress. Please try again.");
+  }
+  if (status === 422 && /name already exists/i.test(githubMessage)) {
+    return new GitHubApiError(status, "github_name_taken", "A repository with that name already exists on your account.");
+  }
+  if (status === 422) {
+    return new GitHubApiError(status, "github_invalid", githubMessage || "GitHub rejected this request as invalid.");
+  }
+  if (status === 429) {
+    return new GitHubApiError(status, "github_rate_limited", "Too many requests to GitHub right now. Please wait a moment and try again.");
+  }
+  if (status >= 500) {
+    return new GitHubApiError(status, "github_server_error", "GitHub is having issues right now. Please try again shortly.");
+  }
+  return new GitHubApiError(status, "github_error", githubMessage || `GitHub API error (${pathname}): ${status}`);
+}
+
 async function gh(token: string, pathname: string, init?: RequestInit) {
   const res = await fetch(`${API}${pathname}`, { ...init, headers: headers(token) });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`GitHub API error (${pathname}): ${res.status} ${text}`);
+    throw friendlyGithubError(res.status, pathname, text);
   }
   return res.json();
 }

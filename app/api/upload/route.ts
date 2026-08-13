@@ -32,7 +32,16 @@ export async function POST(req: NextRequest) {
   const extractDir = path.join(os.tmpdir(), `harbor-${nanoid()}`);
   try {
     const buffer = await fetchBlobBuffer(blobUrl);
-    const extracted = extractZip(buffer, extractDir);
+    let extracted;
+    try {
+      extracted = extractZip(buffer, extractDir);
+    } catch {
+      await del(blobPathname).catch(() => {});
+      return NextResponse.json(
+        { ok: false, error: "invalid_zip", detail: "This file couldn't be read as a ZIP. Try re-uploading it." },
+        { status: 400 }
+      );
+    }
     const detection = detectFramework(extracted.extractDir, extracted.packageJson);
 
     return NextResponse.json({
