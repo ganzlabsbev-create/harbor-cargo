@@ -9,6 +9,7 @@ export default function Logo({ size = 40, className = "" }: { size?: number; cla
       height={size}
       className={className}
       priority
+      unoptimized
     />
   );
 }

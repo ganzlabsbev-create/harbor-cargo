@@ -1,82 +1,211 @@
 # HARBOR CARGO
 
-A hub of deploy/publish tools. The first tool is **GitHub Uploader** — log in
-with your own GitHub account and push a project (as a ZIP) to a new or
-existing repository of yours. Built so more tools/destinations (Vercel,
-Netlify, ...) can be added later under `app/tools/*` without touching this
-one.
+### Build on mobile. Ship to GitHub.
 
-## Architecture highlights
- 
-- **GitHub OAuth, relay-only.** The server exchanges the OAuth `code` for an
-  access token (required, since `github.com/login/oauth/access_token` has no
-  browser CORS support) and immediately AES‑256‑GCM encrypts it into an
-  `httpOnly` session cookie. The token is never logged, cached, or written to
-  the database. See `lib/session.ts` and `app/api/auth/github/callback/route.ts`.
-- **Uploads go straight to Vercel Blob.** The browser uploads the ZIP
-  directly to Blob storage (bypassing the ~4.5MB serverless function body
-  limit), then the analyze/diff/push/commit-diff routes fetch it from there.
-  The blob is deleted again once it's been used — see `lib/blob-fetch.ts`,
-  `lib/use-blob-cleanup.ts`, `app/api/upload/blob-token/route.ts`, and
-  `app/api/upload/blob-cleanup/route.ts`.
-- **Per-user upload cooldown.** Before every upload the client calls
-  `/api/upload/rate-limit`, which enforces a cooldown before the next one is
-  allowed (60s for a `.zip`, 5s per file for a loose-files bundle). See
-  `lib/rate-limit.ts`.
-- **Postgres stores no secrets.** `users` and `projects` tables are for
-  display/history only.
+HARBOR CARGO is a mobile-first tool for moving your projects to GitHub.
 
-## Getting started
+Choose a project, select where it goes, and let HARBOR handle the delivery.
+
+**Create a new repository or update an existing one — directly from your device.**
+
+[Open HARBOR CARGO](https://harbor-cargo.vercel.app/)
+
+---
+
+## What is HARBOR CARGO?
+
+HARBOR CARGO is a hub for project delivery tools.
+
+The first available tool is **GitHub**, allowing you to:
+
+- Create a new GitHub repository from your project
+- Update an existing GitHub repository
+- Upload ZIP files or loose files
+- Review your project before sending it
+- Compare project files with an existing repository
+- Choose which files to add, replace, or delete
+
+More tools and destinations may be added in future versions.
+
+---
+
+# 🚀 Create a New Repository
+
+Create a new GitHub repository from your project.
+
+### 1. Choose GitHub
+
+Open HARBOR CARGO and choose the GitHub tool.
+
+![Choose GitHub](public/docs/github-home.png)
+
+### 2. Choose Create Repository
+
+Choose **Create a new repository**.
+
+![Choose repository action](public/docs/github-mode.png)
+
+### 3. Select Your Project
+
+Choose a ZIP file or select project files directly from your device.
+
+HARBOR analyzes the project and shows its file structure before creating the repository.
+
+![Select project files](public/docs/create-upload.png)
+
+### 4. Configure and Create
+
+Enter your repository name and choose whether the repository should be **Private** or **Public**.
+
+Review the project, then confirm.
+
+![Configure repository](public/docs/create-settings.png)
+
+Your new repository will be created on GitHub.
+
+---
+
+# 🔄 Update an Existing Repository
+
+Already have a project on GitHub?
+
+Use HARBOR to compare your local project with an existing repository and choose exactly which changes should be sent.
+
+### 1. Choose GitHub
+
+Open HARBOR CARGO and choose the GitHub tool.
+
+![Choose GitHub](public/docs/github-home.png)
+
+### 2. Choose Update Repository
+
+Choose **Update an existing repository**.
+
+![Choose repository action](public/docs/github-mode.png)
+
+### 3. Select a Repository
+
+Choose the GitHub repository you want to update.
+
+![Select repository](public/docs/update-repository.png)
+
+### 4. Import Your Project
+
+Upload a ZIP file or select project files directly from your device.
+
+HARBOR compares the uploaded project with the selected repository.
+
+![Import project](public/docs/update-import.png)
+
+### 5. Review and Confirm Changes
+
+HARBOR shows the differences between your project and the repository.
+
+You can choose which files to:
+
+- **Add** — add new files
+- **Replace** — replace existing files
+- **Delete** — remove files from the repository
+
+Review your selections, optionally add a commit message, and confirm the update.
+
+![Review changes](public/docs/update-changes.png)
+
+Your selected changes will be committed to GitHub.
+
+---
+
+# 🔐 GitHub & Your Data
+
+HARBOR CARGO connects to GitHub using your own GitHub account.
+
+You remain in control of your GitHub repositories and the projects you send through HARBOR.
+
+HARBOR does not claim ownership of your project files or their contents.
+
+For more information about how HARBOR handles information and sessions, see:
+
+- [Privacy Policy](https://harbor-cargo.vercel.app/settings/privacy)
+- [License](https://harbor-cargo.vercel.app/settings/license)
+
+---
+
+# ⚠️ Before Using HARBOR
+
+You need:
+
+- A GitHub account
+- Permission to access the repository you want to use
+- A project or project files to upload
+
+When updating a repository, HARBOR needs permission to make changes to that repository through your GitHub account.
+
+---
+
+# 🐛 Report a Problem
+
+Found something that doesn't work?
+
+Please [open an issue](https://github.com/ganzlabsbev-create/harbor-cargo/issues) and include:
+
+- What you were trying to do
+- What happened
+- The error message, if one was shown
+- Your device and browser
+
+**Never include passwords, GitHub access tokens, or other private credentials in an issue.**
+
+---
+
+# 🛠️ Developers
+
+HARBOR CARGO is developed by **GanZ Labs**.
+
+The information below is intended for developers working with the project source code.
+
+## Local Development
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in the values below
 npm run dev
 ```
 
-## Environment variables to set on Vercel
+Create your local environment file from `.env.example` and configure the required services and credentials.
 
-| Variable | Where to get it |
-| --- | --- |
-| `GITHUB_OAUTH_CLIENT_ID` | Create a GitHub **OAuth App** at https://github.com/settings/developers |
-| `GITHUB_OAUTH_CLIENT_SECRET` | Same OAuth App |
-| `SESSION_ENCRYPTION_KEY` | Generate a fresh secret: `openssl rand -base64 32` |
-| `POSTGRES_URL` | Added automatically once you attach **Vercel Postgres** under the project's Storage tab |
-| `BLOB_READ_WRITE_TOKEN` | Added automatically once you attach **Vercel Blob** under the project's Storage tab |
-| `NEXT_PUBLIC_BUILD_ID` | Set automatically by `npm run build` (via `scripts/set-build-id.js`) — don't set it yourself |
+## Environment Variables
 
-When creating the GitHub OAuth App:
-- **Homepage URL**: your deployed domain
-- **Authorization callback URL**: `https://<your-domain>/api/auth/github/callback`
+| Variable | Purpose |
+|---|---|
+| `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth application client ID |
+| `GITHUB_OAUTH_CLIENT_SECRET` | GitHub OAuth application secret |
+| `SESSION_ENCRYPTION_KEY` | Encryption key used for user sessions |
+| `POSTGRES_URL` | PostgreSQL database connection |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob storage access |
+| `NEXT_PUBLIC_BUILD_ID` | Build identifier generated during the build |
 
-No longer needed (removed from this project): `APP_ACCESS_CODE`, `VERCEL_TOKEN`,
-a static `GITHUB_TOKEN`.
+## GitHub OAuth
 
-## What was carried over from the previous project (AoTo-ZIP-GanZ-Labs)
+For a self-hosted installation, create a GitHub OAuth App and configure:
 
-**Moved as-is**
-- `lib/zip.ts` — ZIP extraction + file tree building
-- `lib/framework-detect.ts` — framework detection from config/deps
+- **Homepage URL:** your deployed HARBOR URL
+- **Authorization callback URL:**
 
-**Moved, but adapted**
-- `lib/github.ts` — Git Data API calls, rewritten so every function takes a
-  `token` parameter instead of reading `process.env.GITHUB_TOKEN`; added
-  `listRepos` / `getAuthenticatedUser`
-- `lib/i18n.ts`, `lib/i18n-context.tsx` — same provider/hook shape, all copy
-  rewritten for HARBOR CARGO
-- `components/UploadZone.tsx` — same drag/drop + analyze logic, restyled;
-  now uploads straight to Vercel Blob and hands the blob reference (not the
-  raw `File`) back to the parent page alongside the analysis result
+```
+https://<your-domain>/api/auth/github/callback
+```
 
-**Written from scratch**
-- Everything else: pages, layout, theme, `lib/session.ts`, `lib/db.ts`
-  (new schema), `middleware.ts`, all API routes, icon/build-id scripts
+---
 
-## Icon generation
+# 📜 License
 
-`public/harbor-cargo.png` is the source. `scripts/generate-icons.js` (uses
-`sharp`) generates favicons, apple-touch-icon, PWA icons, and an og-image
-into `public/icons/` — it runs automatically on `npm install` (postinstall).
-Those files are already included in this export so you don't have to run it
-immediately, but re-run `node scripts/generate-icons.js` any time you swap
-the source PNG.
+HARBOR CARGO is proprietary software developed by GanZ Labs.
+
+See the [License](https://harbor-cargo.vercel.app/settings/license) page for the terms that apply to the software.
+
+---
+
+### About
+
+**HARBOR CARGO**
+Built by GanZ Labs
+Build on mobile. Ship to GitHub.
