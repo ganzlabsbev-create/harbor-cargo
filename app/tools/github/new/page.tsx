@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, CheckCircle2, ExternalLink, Loader2, FolderTree } from "lucide-react";
 import Header from "@/components/Header";
 import UploadZone, { UploadedBlob } from "@/components/UploadZone";
-import TreeView from "@/components/TreeView";
+import EditableTreeView from "@/components/EditableTreeView";
 import ZipWarnings from "@/components/ZipWarnings";
 import { useLang } from "@/lib/i18n-context";
 import { useBlobCleanup } from "@/lib/use-blob-cleanup";
+import { flattenFiles, buildTreeFromPaths, resolveMoveTarget } from "@/lib/tree-utils";
 
 interface AnalyzeResult {
   ok: true;
@@ -28,6 +29,9 @@ export default function NewRepoPage() {
   const [pushing, setPushing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ repoUrl: string } | null>(null);
+  // Maps original extracted path -> current (possibly dragged-to) path.
+  // Only entries that actually changed are sent to the server on push.
+  const [pathMap, setPathMap] = useState<Record<string, string>>({});
 
   // Deletes the uploaded blob if the user leaves without ever pushing.
   useBlobCleanup(result ? null : blob);
@@ -35,9 +39,23 @@ export default function NewRepoPage() {
   function handleAnalyzed(b: UploadedBlob, data: AnalyzeResult, fileName: string) {
     setBlob(b);
     setAnalysis(data);
+    const original = flattenFiles(data.tree);
+    setPathMap(Object.fromEntries(original.map((p) => [p, p])));
     if (!repoName) {
       setRepoName(fileName.replace(/\.zip$/i, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-"));
     }
+  }
+
+  const displayTree = useMemo(() => buildTreeFromPaths(Object.values(pathMap)), [pathMap]);
+
+  function handleMove(currentPath: string, targetFolder: string) {
+    setPathMap((prev) => {
+      const originalPath = Object.keys(prev).find((k) => prev[k] === currentPath);
+      if (!originalPath) return prev;
+      const newPath = resolveMoveTarget(currentPath, targetFolder, Object.values(prev));
+      if (newPath === currentPath) return prev;
+      return { ...prev, [originalPath]: newPath };
+    });
   }
 
   async function handlePush() {
@@ -45,6 +63,9 @@ export default function NewRepoPage() {
     setPushing(true);
     setError(null);
     try {
+      const moves = Object.entries(pathMap)
+        .filter(([from, to]) => from !== to)
+        .map(([from, to]) => ({ from, to }));
       const res = await fetch("/api/push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,6 +75,7 @@ export default function NewRepoPage() {
           mode: "new",
           repoName,
           private: String(isPrivate),
+          moves,
         }),
       });
       const data = await res.json();
@@ -108,8 +130,9 @@ export default function NewRepoPage() {
                   <div className="mt-3 flex items-center gap-1 text-xs text-ink-faint">
                     <FolderTree size={14} /> {t("file_structure")}
                   </div>
+                  <p className="mt-1 text-[11px] text-ink-faint">{t("drag_to_move_hint")}</p>
                   <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-base-border bg-base-bg p-2">
-                    <TreeView nodes={analysis.tree} />
+                    <EditableTreeView nodes={displayTree} onMove={handleMove} />
                   </div>
                 </div>
 

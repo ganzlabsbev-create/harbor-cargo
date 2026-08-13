@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.8.0";
+export const APP_VERSION = "0.9.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.9.0",
+    date: "2026-08",
+    notes: [
+      "New repository flow: you can now drag a file's handle onto any folder in the preview tree to move it there before pushing — no need to re-zip",
+      "(Update-existing-repo flow doesn't have this yet — planned separately)",
+    ],
+  },
   {
     version: "0.8.0",
     date: "2026-08",

@@ -57,6 +57,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Apply any client-side drag-to-move renames before building the file
+    // list to push — see components/EditableTreeView.tsx. Both sides are
+    // validated so a crafted request can't write outside extractDir.
+    const moves: Array<{ from: string; to: string }> = Array.isArray(body?.moves) ? body.moves : [];
+    const isSafeRelPath = (p: unknown): p is string =>
+      typeof p === "string" && p.length > 0 && !p.startsWith("/") && !p.split("/").includes("..");
+    for (const mv of moves) {
+      if (!isSafeRelPath(mv?.from) || !isSafeRelPath(mv?.to)) continue;
+      const src = path.join(extracted.extractDir, mv.from);
+      const dest = path.join(extracted.extractDir, mv.to);
+      if (!src.startsWith(extracted.extractDir) || !dest.startsWith(extracted.extractDir)) continue;
+      if (!fs.existsSync(src) || fs.existsSync(dest)) continue;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.renameSync(src, dest);
+    }
+
     const detection = detectFramework(extracted.extractDir, extracted.packageJson);
     const relativeFiles = listAllFiles(extracted.extractDir);
 
