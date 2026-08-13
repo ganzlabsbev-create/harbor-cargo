@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.4.0";
+export const APP_VERSION = "0.5.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.5.0",
+    date: "2026-08",
+    notes: [
+      "Rewrote the License page — HARBOR CARGO is now a public app, not internal software, so the page states the real proprietary license, user-content ownership, and third-party dependency licenses",
+      "Added a new Privacy page under Settings, explaining exactly what data is collected, how the GitHub access token is handled, and how uploaded files are (not) retained",
+    ],
+  },
   {
     version: "0.4.0",
     date: "2026-08",

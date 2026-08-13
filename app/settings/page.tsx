@@ -14,6 +14,7 @@ import {
   BookOpen,
   Tag,
   ScrollText,
+  ShieldCheck,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
@@ -57,6 +58,7 @@ export default function SettingsPage() {
     { href: "/settings/help", icon: BookOpen, title: t("how_to_use_title"), desc: t("how_to_use_desc") },
     { href: "/settings/version", icon: Tag, title: t("version_title"), desc: t("version_desc") },
     { href: "/settings/license", icon: ScrollText, title: t("license_title"), desc: t("license_desc") },
+    { href: "/settings/privacy", icon: ShieldCheck, title: t("privacy_title"), desc: t("privacy_desc") },
   ];
 
   return (
