@@ -10,6 +10,7 @@ import RepoIcon from "@/components/RepoIcon";
 import ZipWarnings from "@/components/ZipWarnings";
 import { useLang } from "@/lib/i18n-context";
 import { cleanupBlob, useBlobCleanup } from "@/lib/use-blob-cleanup";
+import { useElapsedSeconds } from "@/lib/use-elapsed";
 
 interface RepoOption {
   name: string;
@@ -52,6 +53,9 @@ export default function UpdateRepoPage() {
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ commitUrl: string } | null>(null);
+  const commitElapsed = useElapsedSeconds(committing);
+
+  const reposLoadElapsed = useElapsedSeconds(!repos && !loadError);
 
   useEffect(() => {
     fetch("/api/repos")
@@ -62,6 +66,52 @@ export default function UpdateRepoPage() {
       })
       .catch((err) => setLoadError(String(err?.message || err)));
   }, []);
+
+  // Repo icons load separately, in small batches, after the list itself
+  // shows up — a logo lookup can cost several GitHub API calls each, so
+  // doing all of them up front would make the list slow to appear. This
+  // way every repo eventually gets a real attempt at its icon (not just
+  // the first page), and the grid fills in progressively instead of
+  // leaving later repos stuck on the generic color-dot fallback.
+  useEffect(() => {
+    if (!repos || repos.length === 0) return;
+    let cancelled = false;
+    const BATCH_SIZE = 15;
+
+    async function loadLogosProgressively() {
+      for (let i = 0; i < repos!.length; i += BATCH_SIZE) {
+        if (cancelled) return;
+        const batch = repos!.slice(i, i + BATCH_SIZE).map((r) => {
+          const [owner, name] = r.full_name.split("/");
+          return { owner, name };
+        });
+        try {
+          const res = await fetch("/api/repos/logos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ repos: batch }),
+          });
+          const data = await res.json();
+          if (cancelled || !data.ok) continue;
+          setRepos((prev) =>
+            prev
+              ? prev.map((r) => (r.full_name in data.logos ? { ...r, logoUrl: data.logos[r.full_name] } : r))
+              : prev
+          );
+        } catch {
+          // this batch failed (e.g. transient network issue) — move on to
+          // the next one rather than blocking the rest of the list
+        }
+      }
+    }
+
+    loadLogosProgressively();
+    return () => {
+      cancelled = true;
+    };
+    // Only re-run when a fresh repo list comes in, not on every logo update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repos === null]);
 
   // Deletes the uploaded blob if the user leaves without ever committing.
   useBlobCleanup(result ? null : blob);
@@ -156,6 +206,7 @@ export default function UpdateRepoPage() {
             ) : !repos ? (
               <p className="flex items-center gap-2 text-sm text-ink-dim">
                 <Loader2 size={16} className="animate-spin" /> {t("loading_repos")}
+                {reposLoadElapsed > 0 && <span className="text-ink-faint">({reposLoadElapsed}{t("seconds_short")})</span>}
               </p>
             ) : repos.length === 0 ? (
               <p className="text-sm text-ink-dim">{t("no_repos")}</p>
@@ -265,6 +316,7 @@ export default function UpdateRepoPage() {
                     {committing ? (
                       <>
                         <Loader2 size={18} className="animate-spin" /> {t("committing")}
+                        {commitElapsed > 0 && <span className="opacity-80">({commitElapsed}{t("seconds_short")})</span>}
                       </>
                     ) : (
                       t("confirm_commit_button")

@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
-import { UploadCloud, Loader2, FileUp } from "lucide-react";
+import { UploadCloud, Loader2, FileUp, Clock } from "lucide-react";
 import { useLang } from "@/lib/i18n-context";
+import { useCountdown, useElapsedSeconds } from "@/lib/use-elapsed";
 
 export interface UploadedBlob {
   url: string;
@@ -46,6 +47,26 @@ export default function UploadZone({
   const [isUploading, setUploading] = useState(false);
   const [isZipping, setZipping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which part of submit() is currently running, so the label (and the
+  // elapsed-time counter next to it) can reflect real progress instead of
+  // one static "Analyzing..." string for the whole request.
+  const [stage, setStage] = useState<"checking" | "uploading" | "processing" | null>(null);
+  // Seconds left on an active rate-limit cooldown, ticking down live until
+  // it hits 0 ("unlocked") — set from the server's retryAfterSeconds and
+  // then counted down purely on the client. null = not rate-limited.
+  const [rateLimitStart, setRateLimitStart] = useState<number | null>(null);
+
+  const elapsed = useElapsedSeconds(stage !== null);
+  const rateLimitRemaining = useCountdown(rateLimitStart);
+  const isRateLimited = rateLimitStart !== null && (rateLimitRemaining ?? 0) > 0;
+
+  // Once the countdown reaches 0, clear it so the dropzone goes back to its
+  // normal clickable state (and so a future rate-limit hit starts fresh).
+  useEffect(() => {
+    if (rateLimitStart !== null && rateLimitRemaining === 0) {
+      setRateLimitStart(null);
+    }
+  }, [rateLimitRemaining, rateLimitStart]);
 
   async function submit(file: File, kind: "zip" | "loose", fileCount: number) {
     if (file.size > MAX_FILE_BYTES) {
@@ -56,6 +77,7 @@ export default function UploadZone({
     setUploading(true);
     setError(null);
     try {
+      setStage("checking");
       const rateLimitRes = await fetch("/api/upload/rate-limit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -64,17 +86,22 @@ export default function UploadZone({
       const rateLimitData = await rateLimitRes.json();
       if (!rateLimitData.ok) {
         if (rateLimitData.error === "rate_limited") {
-          throw new Error(t("rate_limited_message").replace("{seconds}", String(rateLimitData.retryAfterSeconds)));
+          // Show a live countdown instead of a one-time static message —
+          // the dropzone re-enables itself the moment it reaches 0.
+          setRateLimitStart(rateLimitData.retryAfterSeconds);
+          return;
         }
         throw new Error(rateLimitData.error || "rate_limit_check_failed");
       }
 
+      setStage("uploading");
       const blobResult = await upload(`uploads/${crypto.randomUUID()}.zip`, file, {
         access: "public",
         handleUploadUrl: "/api/upload/blob-token",
       });
       const blobRef: UploadedBlob = { url: blobResult.url, pathname: blobResult.pathname };
 
+      setStage("processing");
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -89,6 +116,7 @@ export default function UploadZone({
       setError(String(err?.message || err));
     } finally {
       setUploading(false);
+      setStage(null);
     }
   }
 
@@ -140,6 +168,30 @@ export default function UploadZone({
 
   const busy = isUploading || isZipping;
 
+  // Label for whatever is actively happening — reflects real progress
+  // through submit() (checking the limit, uploading, then processing)
+  // rather than one generic string for the whole request.
+  let busyLabel = uploadingLabel || t("upload_uploading");
+  if (isZipping) busyLabel = t("zipping_files");
+  else if (stage === "checking") busyLabel = t("checking_limit");
+  else if (stage === "uploading") busyLabel = t("uploading_file");
+  else if (stage === "processing") busyLabel = uploadingLabel || t("upload_uploading");
+
+  if (isRateLimited) {
+    return (
+      <div>
+        <div className="relative flex flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border-2 border-dashed border-base-border bg-base-surface2 px-6 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-base-border bg-base-surface text-harbor-orange">
+            <Clock size={22} strokeWidth={1.75} />
+          </div>
+          <p className="font-display text-base font-medium text-ink">
+            {t("rate_limited_countdown").replace("{seconds}", String(rateLimitRemaining ?? 0))}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div
@@ -168,7 +220,12 @@ export default function UploadZone({
           </div>
         )}
         <p className="font-display text-base font-medium text-ink">
-          {isZipping ? t("zipping_files") : busy ? uploadingLabel || t("upload_uploading") : t("upload_title")}
+          {busy ? busyLabel : t("upload_title")}
+          {busy && elapsed > 0 && (
+            <span className="ml-1 text-ink-faint">
+              ({elapsed}{t("seconds_short")})
+            </span>
+          )}
         </p>
         {!busy && (
           <>

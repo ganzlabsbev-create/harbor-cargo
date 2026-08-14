@@ -10,6 +10,7 @@ import ZipWarnings from "@/components/ZipWarnings";
 import { useLang } from "@/lib/i18n-context";
 import { useBlobCleanup } from "@/lib/use-blob-cleanup";
 import { flattenFiles, buildTreeFromPaths, resolveMoveTarget } from "@/lib/tree-utils";
+import { useElapsedSeconds } from "@/lib/use-elapsed";
 
 interface AnalyzeResult {
   ok: true;
@@ -32,6 +33,7 @@ export default function NewRepoPage() {
   // Maps original extracted path -> current (possibly dragged-to) path.
   // Only entries that actually changed are sent to the server on push.
   const [pathMap, setPathMap] = useState<Record<string, string>>({});
+  const pushElapsed = useElapsedSeconds(pushing);
 
   // Deletes the uploaded blob if the user leaves without ever pushing.
   useBlobCleanup(result ? null : blob);
@@ -177,6 +179,7 @@ export default function NewRepoPage() {
                   {pushing ? (
                     <>
                       <Loader2 size={18} className="animate-spin" /> {t("pushing")}
+                      {pushElapsed > 0 && <span className="opacity-80">({pushElapsed}{t("seconds_short")})</span>}
                     </>
                   ) : (
                     t("confirm_push_button")
