@@ -15,6 +15,12 @@ export interface SessionData {
   login: string;
   avatarUrl: string;
   userId: number;
+  // Optional Vercel OAuth token, added later in the same session if the
+  // user connects Vercel (see /api/auth/vercel). Same handling as the
+  // GitHub token above — never written to disk, logs, or the database.
+  vercelToken?: string;
+  vercelUsername?: string;
+  vercelTeamId?: string | null;
 }
 
 function getKey(): Promise<CryptoKey> {
@@ -84,6 +90,19 @@ export async function getSession(): Promise<SessionData | null> {
   const raw = cookies().get(COOKIE_NAME)?.value;
   if (!raw) return null;
   return decryptSession(raw);
+}
+
+/**
+ * Merges new fields (e.g. a freshly obtained vercelToken) into the existing
+ * session and re-encrypts it. Used by /api/auth/vercel/callback so
+ * connecting Vercel doesn't disturb the existing GitHub session.
+ */
+export async function updateSessionCookie(patch: Partial<SessionData>): Promise<SessionData | null> {
+  const current = await getSession();
+  if (!current) return null;
+  const updated: SessionData = { ...current, ...patch };
+  await createSessionCookie(updated);
+  return updated;
 }
 
 export function clearSessionCookie() {

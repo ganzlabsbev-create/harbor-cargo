@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.9.2";
+export const APP_VERSION = "0.10.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.10.0",
+    date: "2026-08",
+    notes: [
+      "New tool: Deploy to Vercel. Pick a repo you've already pushed, connect your Vercel account (OAuth — no manual token), and Vercel deploys straight from that GitHub repo. No zip re-upload — future GitHub pushes auto-deploy.",
+      "Project setup is split into clear sections: General (name, framework), Git (repo, branch), Domain, Build & Development Settings, and Environment Variables.",
+      "Requires Vercel's own GitHub App to have access to the repo — a one-time GitHub authorization the app links you to when needed.",
+    ],
+  },
   {
     version: "0.9.2",
     date: "2026-08",

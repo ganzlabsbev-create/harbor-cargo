@@ -1,6 +1,6 @@
 "use client";
 
-import { Github } from "lucide-react";
+import { Github, Rocket } from "lucide-react";
 import ToolCard from "./ToolCard";
 import { useLang } from "@/lib/i18n-context";
 
@@ -14,6 +14,12 @@ export default function ToolGrid() {
       icon: Github,
       title: t("tool_github_title"),
       description: t("tool_github_desc"),
+    },
+    {
+      href: "/tools/vercel/new",
+      icon: Rocket,
+      title: t("tool_vercel_title"),
+      description: t("tool_vercel_desc"),
     },
   ];
 
