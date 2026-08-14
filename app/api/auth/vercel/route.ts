@@ -2,31 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 
 /**
- * Step 1 of connecting Vercel: redirect to Vercel's OAuth authorize screen.
- * Mirrors app/api/auth/github/route.ts exactly — same CSRF-state-cookie
- * pattern, separate cookie name so it can't collide with the GitHub flow
- * if a user somehow triggers both at once.
+ * Step 1 of connecting Vercel.
  *
- * Requires a Vercel OAuth "Integration" client to be registered at
- * https://vercel.com/dashboard/integrations/console (Integration type:
- * "OAuth2 Application"), with this route's callback URL added as a
- * redirect URI.
+ * IMPORTANT: an integration created via the Integrations Console (the
+ * "oac_..." client, set up under vercel.com/dashboard/integrations/console)
+ * is NOT the same system as "Sign in with Vercel" (Team Settings > Apps,
+ * "cl_..." clients, https://vercel.com/oauth/authorize). Those two are
+ * separate products with separate entry points. This one — the Console
+ * integration, which is what lets us actually create/configure projects
+ * via the API — uses its own "External installation flow" instead:
+ *   https://vercel.com/integrations/:slug/new
+ * See https://vercel.com/docs/integrations/create-integration/submit-integration#external-installation-flow
+ *
+ * That start URL doesn't take client_id/redirect_uri — both are already
+ * pinned to this integration in its own settings (the Redirect URL field).
+ * We only need to pass `state` for CSRF protection. Vercel redirects the
+ * user back to our configured Redirect URL with `code` (and `teamId` if a
+ * team was selected), which the callback route then exchanges for a token
+ * exactly the way it already did.
  */
 export async function GET(req: NextRequest) {
-  const clientId = process.env.VERCEL_OAUTH_CLIENT_ID;
-  if (!clientId) {
-    return NextResponse.json({ ok: false, error: "VERCEL_OAUTH_CLIENT_ID is not configured" }, { status: 500 });
+  const slug = process.env.VERCEL_INTEGRATION_SLUG;
+  if (!slug) {
+    return NextResponse.json({ ok: false, error: "VERCEL_INTEGRATION_SLUG is not configured" }, { status: 500 });
   }
 
   const state = randomBytes(16).toString("hex");
-  const redirectUri = new URL("/api/auth/vercel/callback", req.nextUrl.origin).toString();
 
-  const authorizeUrl = new URL("https://vercel.com/oauth/authorize");
-  authorizeUrl.searchParams.set("client_id", clientId);
-  authorizeUrl.searchParams.set("redirect_uri", redirectUri);
-  authorizeUrl.searchParams.set("state", state);
+  const installUrl = new URL(`https://vercel.com/integrations/${slug}/new`);
+  installUrl.searchParams.set("state", state);
 
-  const res = NextResponse.redirect(authorizeUrl);
+  const res = NextResponse.redirect(installUrl);
   res.cookies.set("harbor_vercel_oauth_state", state, {
     httpOnly: true,
     secure: true,

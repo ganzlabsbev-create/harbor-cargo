@@ -12,6 +12,11 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const code = searchParams.get("code");
   const state = searchParams.get("state");
+  // Present only when the user installed on behalf of a Vercel team rather
+  // than their personal account — this comes back as a query param on
+  // THIS redirect (the "External installation flow"), not inside the
+  // token-exchange response body.
+  const teamId = searchParams.get("teamId");
   const expectedState = req.cookies.get("harbor_vercel_oauth_state")?.value;
 
   const failRedirect = new URL("/tools/vercel/new?error=vercel_oauth", req.nextUrl.origin);
@@ -45,9 +50,6 @@ export async function GET(req: NextRequest) {
   }
 
   const token: string = tokenData.access_token;
-  // Vercel's OAuth response includes team_id directly when the user
-  // authorizes on behalf of a team rather than their personal account.
-  const teamId: string | null = tokenData.team_id || null;
 
   let vercelUsername = "";
   try {
