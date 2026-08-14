@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.9.0";
+export const APP_VERSION = "0.9.1";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.9.1",
+    date: "2026-08",
+    notes: [
+      "Repo logos in the 'update repository' picker now fall back to GitHub's own auto-generated preview image when a repo has no dedicated logo file, so most repos show a real picture instead of the plain color dot",
+      "Every repo's icon is now attempted (previously only the first 24), loaded in the background in small batches so the list still appears instantly",
+      "Hitting the upload rate limit now shows a live countdown that unlocks automatically at zero, instead of a static one-time message",
+      "Upload, push, and commit steps now show elapsed time next to their loading label so a slow step doesn't look frozen",
+    ],
+  },
   {
     version: "0.9.0",
     date: "2026-08",
