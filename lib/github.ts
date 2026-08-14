@@ -222,16 +222,13 @@ const LOGO_DIRS = ["", "public", "assets", "static", ".github"];
 /**
  * Looks for a project logo/icon image in common spots (repo root, then
  * public/assets/static/.github). One API call per directory checked, and
- * stops at the first match — so usually 1 call, worst case 5.
- *
- * Most repos don't keep a file literally named logo/icon/favicon, so that
- * search alone left most of the list showing the plain color-dot fallback.
- * When nothing is found, this now falls back to GitHub's own
- * auto-generated social-preview image for the repo (the same card GitHub
- * shows when you share a repo link) — every repo gets one automatically,
- * so this gives an actual picture for virtually the whole list instead of
- * a dot. <RepoIcon> still falls back to the color dot itself if that image
- * ever fails to load (e.g. a private repo the viewer can't preview).
+ * stops at the first match — so usually 1 call, worst case 5. Returns null
+ * (never throws) if nothing is found or the repo is empty/inaccessible —
+ * <RepoIcon> shows the plain GitHub icon in that case rather than a
+ * lookalike image. (An earlier version of this fell back to GitHub's
+ * auto-generated social-preview image, but that card is often unrelated
+ * artwork/a generic banner, not the project's actual logo, so it's been
+ * removed again.)
  */
 export async function findRepoLogo(token: string, owner: string, repo: string): Promise<string | null> {
   for (const dir of LOGO_DIRS) {
@@ -244,7 +241,7 @@ export async function findRepoLogo(token: string, owner: string, repo: string): 
       // directory doesn't exist / repo empty / rate limited — just try the next spot
     }
   }
-  return `https://opengraph.githubassets.com/1/${owner}/${repo}`;
+  return null;
 }
 
 /** Flat list of { path, sha } for every file currently in a repo/branch. */

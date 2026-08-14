@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.9.1";
+export const APP_VERSION = "0.9.2";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.9.2",
+    date: "2026-08",
+    notes: [
+      "Reverted the auto-generated preview-image fallback for repo icons — it often showed a generic/unrelated banner instead of the project's actual logo. A repo without a dedicated logo file now shows the plain GitHub icon again.",
+    ],
+  },
   {
     version: "0.9.1",
     date: "2026-08",
