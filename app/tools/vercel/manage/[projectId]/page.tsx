@@ -136,6 +136,7 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
   }, [projectId]);
 
   async function handleDeployFromGit() {
+    if (!window.confirm(t("deploy_from_git_confirm"))) return;
     setGitDeploying(true);
     setActionMsg(null);
     try {
@@ -222,32 +223,29 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
           </div>
         </div>
 
-        {/* Quick deploy actions — always visible regardless of section, so
-            they're never more than one tap away on mobile. */}
-        <div className="mb-1 flex flex-col gap-2 sm:flex-row">
-          <button
-            onClick={handleDeployFromGit}
-            disabled={gitDeploying || !project}
-            title={t("deploy_from_git_hint")}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-harbor-orange px-4 py-2.5 text-sm font-semibold text-white shadow-glow-orange disabled:opacity-50"
-          >
-            {gitDeploying ? <Loader2 size={16} className="animate-spin" /> : <GitBranch size={16} />}
-            {t("deploy_from_git_button")}
-          </button>
-          <button
-            onClick={handleRebuildLatest}
-            disabled={rebuilding || !project}
-            title={t("redeploy_rebuild_hint")}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-base-border bg-base-surface px-4 py-2.5 text-sm font-medium text-ink-dim disabled:opacity-50"
-          >
-            {rebuilding ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
-            {t("redeploy_rebuild_button")}
-          </button>
-        </div>
-        {actionMsg ? (
-          <p className="mb-4 text-xs text-ink-dim">{actionMsg}</p>
-        ) : (
-          <p className="mb-4 text-[11px] text-ink-faint">{t("deploy_from_git_hint")}</p>
+        {/* Quick deploy action — only shown on the overview (landing) section.
+            Just the one button that pulls the latest commit from GitHub;
+            the rebuild-from-same-source button lives only in the
+            Deployments section now, so it doesn't show up on every tab. */}
+        {section === "overview" && (
+          <>
+            <div className="mb-1 flex flex-col gap-2 sm:flex-row">
+              <button
+                onClick={handleDeployFromGit}
+                disabled={gitDeploying || !project}
+                title={t("deploy_from_git_hint")}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-harbor-orange px-4 py-2.5 text-sm font-semibold text-white shadow-glow-orange disabled:opacity-50"
+              >
+                {gitDeploying ? <Loader2 size={16} className="animate-spin" /> : <GitBranch size={16} />}
+                {t("deploy_from_git_button")}
+              </button>
+            </div>
+            {actionMsg ? (
+              <p className="mb-4 text-xs text-ink-dim">{actionMsg}</p>
+            ) : (
+              <p className="mb-4 text-[11px] text-ink-faint">{t("deploy_from_git_hint")}</p>
+            )}
+          </>
         )}
 
         {loadError ? (
@@ -273,6 +271,9 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
                 t={t}
                 onDeployFromGit={handleDeployFromGit}
                 gitDeploying={gitDeploying}
+                onRebuildLatest={handleRebuildLatest}
+                rebuilding={rebuilding}
+                actionMsg={actionMsg}
               />
             )}
             {section === "danger" && <DangerSection projectId={projectId} project={project} t={t} inputClass={inputClass} router={router} />}
@@ -833,11 +834,17 @@ function DeploymentsSection({
   t,
   onDeployFromGit,
   gitDeploying,
+  onRebuildLatest,
+  rebuilding,
+  actionMsg,
 }: {
   projectId: string;
   t: (k: any) => string;
   onDeployFromGit: () => void;
   gitDeploying: boolean;
+  onRebuildLatest: () => void;
+  rebuilding: boolean;
+  actionMsg: string | null;
 }) {
   const [deployments, setDeployments] = useState<Deployment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -872,27 +879,43 @@ function DeploymentsSection({
   return (
     <div className="flex flex-col gap-4">
       {error && <p className="text-sm text-accent-red">{error}</p>}
-      {/* This section's own quick action IS the header's "deploy latest
-          from GitHub" button (replaces the old same-source-only Redeploy
-          that used to live here) — refreshes this list once it kicks off. */}
-      <button
-        onClick={() => {
-          onDeployFromGit();
-          setTimeout(load, 1500);
-        }}
-        disabled={gitDeploying}
-        className="flex items-center justify-center gap-2 rounded-xl bg-harbor-orange px-5 py-3 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
-      >
-        {gitDeploying ? (
-          <>
-            <Loader2 size={16} className="animate-spin" /> {t("deploy_from_git_running")}
-          </>
-        ) : (
-          <>
-            <GitBranch size={16} /> {t("deploy_from_git_button")}
-          </>
-        )}
-      </button>
+      {/* This section keeps both quick actions: pull the latest commit from
+          GitHub (asks for confirmation first, since it fetches new code),
+          and rebuild the existing latest deployment from the same source. */}
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <button
+          onClick={() => {
+            onDeployFromGit();
+            setTimeout(load, 1500);
+          }}
+          disabled={gitDeploying}
+          title={t("deploy_from_git_hint")}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-harbor-orange px-5 py-3 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
+        >
+          {gitDeploying ? (
+            <>
+              <Loader2 size={16} className="animate-spin" /> {t("deploy_from_git_running")}
+            </>
+          ) : (
+            <>
+              <GitBranch size={16} /> {t("deploy_from_git_button")}
+            </>
+          )}
+        </button>
+        <button
+          onClick={() => {
+            onRebuildLatest();
+            setTimeout(load, 1500);
+          }}
+          disabled={rebuilding}
+          title={t("redeploy_rebuild_hint")}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-base-border bg-base-surface px-5 py-3 font-display font-semibold text-ink-dim disabled:opacity-50"
+        >
+          {rebuilding ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+          {t("redeploy_rebuild_button")}
+        </button>
+      </div>
+      {actionMsg && <p className="text-xs text-ink-dim">{actionMsg}</p>}
 
       <Card>
         {deployments === null ? (
