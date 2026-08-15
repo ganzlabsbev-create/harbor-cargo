@@ -1,7 +1,7 @@
 "use client";
 
-import { Github, Rocket } from "lucide-react";
 import ToolCard from "./ToolCard";
+import { GithubMark, VercelMark } from "./BrandIcons";
 import { useLang } from "@/lib/i18n-context";
 
 // Reusable, additive grid: append a { href, icon, titleKey, descKey } entry
@@ -11,13 +11,13 @@ export default function ToolGrid() {
   const tools = [
     {
       href: "/tools/github",
-      icon: Github,
+      icon: <GithubMark size={22} />,
       title: t("tool_github_title"),
       description: t("tool_github_desc"),
     },
     {
       href: "/tools/vercel",
-      icon: Rocket,
+      icon: <VercelMark size={22} />,
       title: t("tool_vercel_title"),
       description: t("tool_vercel_desc"),
     },
@@ -31,3 +31,4 @@ export default function ToolGrid() {
     </div>
   );
 }
+

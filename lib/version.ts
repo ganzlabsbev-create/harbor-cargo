@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.11.0";
+export const APP_VERSION = "0.12.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.12.0",
+    date: "2026-08",
+    notes: [
+      "The GitHub and Vercel tool cards on the home screen, and the repo fallback icon, now show each platform's real monochrome logo mark instead of a generic icon — same card style and colors as before, just the glyph changed.",
+    ],
+  },
   {
     version: "0.11.0",
     date: "2026-08",
