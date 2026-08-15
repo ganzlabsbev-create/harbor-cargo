@@ -58,7 +58,16 @@ export async function POST(req: NextRequest) {
 
     const modified = zipFiles.filter((p) => repoPaths.has(p)).filter(isSafePath).sort();
     const zipOnly = zipFiles.filter((p) => !repoPaths.has(p)).filter(isSafePath).sort();
-    const repoOnly = [...repoPaths].filter((p) => !zipPaths.has(p)).filter(isSafePath).sort();
+    const repoShaByPath = new Map(repoTree.map((f) => [f.path, f.sha]));
+    // repoOnly carries each file's current blob sha alongside its path —
+    // needed so a repo-side rename (dragging one of these into a folder
+    // without ever touching its content) can reuse the existing blob
+    // instead of round-tripping the file's bytes through the client.
+    const repoOnly = [...repoPaths]
+      .filter((p) => !zipPaths.has(p))
+      .filter(isSafePath)
+      .sort()
+      .map((p) => ({ path: p, sha: repoShaByPath.get(p)! }));
 
     return NextResponse.json({
       ok: true,

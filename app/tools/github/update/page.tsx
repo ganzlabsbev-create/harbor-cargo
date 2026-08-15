@@ -11,6 +11,7 @@ import ZipWarnings from "@/components/ZipWarnings";
 import { useLang } from "@/lib/i18n-context";
 import { cleanupBlob, useBlobCleanup } from "@/lib/use-blob-cleanup";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
+import { resolveMoveTarget } from "@/lib/tree-utils";
 
 interface RepoOption {
   name: string;
@@ -24,7 +25,7 @@ interface RepoOption {
 interface DiffPayload {
   modified: string[];
   zipOnly: string[];
-  repoOnly: string[];
+  repoOnly: { path: string; sha: string }[];
 }
 
 function toggle(set: Set<string>, path: string): Set<string> {
@@ -48,6 +49,16 @@ export default function UpdateRepoPage() {
   const [selectedAdd, setSelectedAdd] = useState<Set<string>>(new Set());
   const [selectedDelete, setSelectedDelete] = useState<Set<string>>(new Set());
   const [diffWarnings, setDiffWarnings] = useState<{ oversizedFiles: string[]; caseCollisions: string[][]; skippedUnsafePaths: string[] } | null>(null);
+
+  // Maps each file's original diff path -> its current (possibly
+  // dragged-to) path. Keyed by origPath so a file's add/replace/delete
+  // status survives being moved. repoOnly files also get an entry here so
+  // they can be dragged into a folder (a pure repo-side rename) even though
+  // they were never in the ZIP — see repoOnlyShas below.
+  const [pathMap, setPathMap] = useState<Record<string, string>>({});
+  // origPath -> blob sha, for repoOnly files only. Lets a repo-side rename
+  // reuse the file's existing content instead of re-uploading it.
+  const [repoOnlyShas, setRepoOnlyShas] = useState<Record<string, string>>({});
 
   const [commitMessage, setCommitMessage] = useState("");
   const [committing, setCommitting] = useState(false);
@@ -126,34 +137,93 @@ export default function UpdateRepoPage() {
     setSelectedReplace(new Set(data.diff.modified));
     setSelectedAdd(new Set(data.diff.zipOnly));
     setSelectedDelete(new Set());
+    const allOrigPaths: string[] = [
+      ...data.diff.modified,
+      ...data.diff.zipOnly,
+      ...data.diff.repoOnly.map((r: { path: string }) => r.path),
+    ];
+    setPathMap(Object.fromEntries(allOrigPaths.map((p) => [p, p])));
+    setRepoOnlyShas(Object.fromEntries(data.diff.repoOnly.map((r: { path: string; sha: string }) => [r.path, r.sha])));
   }
 
   const diffTree = useMemo(() => {
     if (!diff) return [];
-    const items: { path: string; status: DiffStatus }[] = [
-      ...diff.modified.map((p) => ({ path: p, status: "modified" as DiffStatus })),
-      ...diff.zipOnly.map((p) => ({ path: p, status: "add" as DiffStatus })),
-      ...diff.repoOnly.map((p) => ({ path: p, status: "unchanged" as DiffStatus })),
+    const items: { origPath: string; path: string; status: DiffStatus }[] = [
+      ...diff.modified.map((p) => ({ origPath: p, path: pathMap[p] ?? p, status: "modified" as DiffStatus })),
+      ...diff.zipOnly.map((p) => ({ origPath: p, path: pathMap[p] ?? p, status: "add" as DiffStatus })),
+      ...diff.repoOnly.map((r) => ({ origPath: r.path, path: pathMap[r.path] ?? r.path, status: "unchanged" as DiffStatus })),
     ];
     return buildDiffTree(items);
-  }, [diff]);
+  }, [diff, pathMap]);
+
+  function handleMove(origPath: string, targetFolder: string) {
+    // Files marked for deletion can't be dragged — DiffTreeView already
+    // disables their drag handle, but guard here too in case of a stray call.
+    if (selectedDelete.has(origPath)) return;
+    setPathMap((prev) => {
+      const currentPath = prev[origPath];
+      if (currentPath === undefined) return prev;
+      const newPath = resolveMoveTarget(currentPath, targetFolder, Object.values(prev));
+      if (newPath === currentPath) return prev;
+      return { ...prev, [origPath]: newPath };
+    });
+  }
 
   const addCount = selectedAdd.size;
   const replaceCount = selectedReplace.size;
   const deleteCount = selectedDelete.size;
-  const totalChanges = addCount + replaceCount + deleteCount;
+  const movedCount = useMemo(
+    () => Object.entries(pathMap).filter(([orig, cur]) => orig !== cur && !selectedDelete.has(orig)).length,
+    [pathMap, selectedDelete]
+  );
+  // Renamed repoOnly files aren't part of any selection set (they're neither
+  // "add" nor "replace" nor "delete"), so they need to be counted separately
+  // to enable the confirm button when a rename is the only change made.
+  const repoOnlyMovedCount = useMemo(() => {
+    if (!diff) return 0;
+    return diff.repoOnly.filter((r) => !selectedDelete.has(r.path) && (pathMap[r.path] ?? r.path) !== r.path).length;
+  }, [diff, pathMap, selectedDelete]);
+  const totalChanges = addCount + replaceCount + deleteCount + repoOnlyMovedCount;
 
   async function handleCommit() {
-    if (!blob || !selected || totalChanges === 0) return;
+    if (!blob || !selected || !diff || totalChanges === 0) return;
     setCommitting(true);
     setError(null);
     try {
       const [owner, repo] = selected.full_name.split("/");
-      const changes = [
-        ...[...selectedReplace].map((p) => ({ path: p, action: "replace" })),
-        ...[...selectedAdd].map((p) => ({ path: p, action: "add" })),
-        ...[...selectedDelete].map((p) => ({ path: p, action: "delete" })),
-      ];
+
+      const changes: { path: string; action: "add" | "replace" | "delete"; zipPath?: string; sha?: string }[] = [];
+
+      for (const origPath of selectedReplace) {
+        const cur = pathMap[origPath] ?? origPath;
+        if (cur === origPath) {
+          changes.push({ path: origPath, action: "replace" });
+        } else {
+          // Moved while being replaced: the old repo path shouldn't keep a
+          // stale copy, so drop it and add the new content at the new path.
+          changes.push({ path: origPath, action: "delete" });
+          changes.push({ path: cur, action: "add", zipPath: origPath });
+        }
+      }
+      for (const origPath of selectedAdd) {
+        const cur = pathMap[origPath] ?? origPath;
+        changes.push({ path: cur, action: "add", zipPath: cur !== origPath ? origPath : undefined });
+      }
+      for (const origPath of selectedDelete) {
+        changes.push({ path: origPath, action: "delete" });
+      }
+      // repoOnly files that were dragged to a new folder without being
+      // marked for deletion — a pure repo-side rename, reusing the existing
+      // blob sha so the content doesn't need to round-trip through the ZIP.
+      for (const r of diff.repoOnly) {
+        if (selectedDelete.has(r.path)) continue;
+        const cur = pathMap[r.path] ?? r.path;
+        if (cur !== r.path) {
+          changes.push({ path: r.path, action: "delete" });
+          changes.push({ path: cur, action: "add", sha: repoOnlyShas[r.path] });
+        }
+      }
+
       const res = await fetch("/api/commit-diff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -245,6 +315,8 @@ export default function UpdateRepoPage() {
                   setBlob(null);
                   setDiff(null);
                   setDiffWarnings(null);
+                  setPathMap({});
+                  setRepoOnlyShas({});
                 }}
                 className="text-xs text-harbor-orange"
               >
@@ -269,9 +341,11 @@ export default function UpdateRepoPage() {
                   <p className="mb-1 px-1 text-[11px] uppercase tracking-wide text-ink-faint">
                     {t("file_structure")}
                   </p>
+                  <p className="mb-1 px-1 text-[11px] text-ink-faint">{t("drag_to_move_hint")}</p>
                   <div className="max-h-[28rem] overflow-y-auto">
                     <DiffTreeView
                       nodes={diffTree}
+                      onMove={handleMove}
                       selectedReplace={selectedReplace}
                       selectedAdd={selectedAdd}
                       selectedDelete={selectedDelete}
@@ -294,6 +368,11 @@ export default function UpdateRepoPage() {
                     <span className="rounded-full bg-accent-red/10 px-2.5 py-1 text-accent-red">
                       {t("summary_delete")} {deleteCount} {t("summary_files")}
                     </span>
+                    {movedCount > 0 && (
+                      <span className="rounded-full bg-harbor-blue/10 px-2.5 py-1 text-harbor-blue">
+                        {t("summary_moved")} {movedCount} {t("summary_files")}
+                      </span>
+                    )}
                   </div>
 
                   <label className="mb-1.5 block text-xs font-medium text-ink-dim">

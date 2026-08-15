@@ -205,3 +205,207 @@ export async function getLatestDeploymentUrl(token: string, projectId: string, t
     return null;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * Managing an existing project (v0.11.0) — everything below this line is
+ * for app/tools/vercel/manage/*, letting a user edit a Vercel project
+ * Harbor Cargo didn't necessarily create itself. Kept in the same file as
+ * the create-project helpers above since it's the same thin fetch-wrapper
+ * pattern against the same API.
+ * ---------------------------------------------------------------------- */
+
+export interface VercelProjectSummary {
+  id: string;
+  name: string;
+  framework: string | null;
+  /** Domain/URL of the most recent deployment, if any. */
+  latestUrl: string | null;
+}
+
+export interface VercelDeployment {
+  id: string;
+  url: string;
+  state: string;
+  target: string | null;
+  createdAt: number;
+}
+
+export interface VercelProjectDetail {
+  id: string;
+  name: string;
+  framework: string | null;
+  rootDirectory: string | null;
+  buildCommand: string | null;
+  installCommand: string | null;
+  devCommand: string | null;
+  outputDirectory: string | null;
+  gitRepo: string | null;
+  productionBranch: string | null;
+  liveUrl: string | null;
+  latestDeployment: VercelDeployment | null;
+}
+
+export interface VercelEnvVar {
+  id: string;
+  key: string;
+  /** Vercel never returns the plaintext value for "encrypted"/"sensitive" vars — masked client-side regardless, see manage/[projectId]/page.tsx. */
+  value: string | null;
+  target: Array<"production" | "preview" | "development">;
+}
+
+export interface VercelDomain {
+  name: string;
+  verified: boolean;
+}
+
+function toProjectDetail(data: any): VercelProjectDetail {
+  const latest = data.latestDeployments?.[0];
+  return {
+    id: data.id,
+    name: data.name,
+    framework: data.framework ?? null,
+    rootDirectory: data.rootDirectory ?? null,
+    buildCommand: data.buildCommand ?? null,
+    installCommand: data.installCommand ?? null,
+    devCommand: data.devCommand ?? null,
+    outputDirectory: data.outputDirectory ?? null,
+    gitRepo: data.link?.repo ? `${data.link.org}/${data.link.repo}` : null,
+    productionBranch: data.link?.productionBranch ?? null,
+    liveUrl: data.targets?.production?.alias?.[0]
+      ? `https://${data.targets.production.alias[0]}`
+      : latest?.url
+        ? `https://${latest.url}`
+        : null,
+    latestDeployment: latest
+      ? { id: latest.uid, url: `https://${latest.url}`, state: latest.readyState || latest.state, target: latest.target ?? null, createdAt: latest.createdAt }
+      : null,
+  };
+}
+
+/** Lists every project in the connected account/team. */
+export async function listProjects(token: string, teamId?: string | null): Promise<VercelProjectSummary[]> {
+  const data = await vc(token, withTeam("/v9/projects?limit=100", teamId));
+  return (data.projects || []).map((p: any) => ({
+    id: p.id,
+    name: p.name,
+    framework: p.framework ?? null,
+    latestUrl: p.latestDeployments?.[0]?.url ? `https://${p.latestDeployments[0].url}` : p.targets?.production?.alias?.[0] ? `https://${p.targets.production.alias[0]}` : null,
+  }));
+}
+
+/** Full detail for one project — used by the Overview / Build / Git sections. */
+export async function getProject(token: string, projectId: string, teamId?: string | null): Promise<VercelProjectDetail> {
+  const data = await vc(token, withTeam(`/v9/projects/${projectId}`, teamId));
+  return toProjectDetail(data);
+}
+
+export interface UpdateProjectInput {
+  framework?: string | null;
+  rootDirectory?: string | null;
+  buildCommand?: string | null;
+  installCommand?: string | null;
+  devCommand?: string | null;
+  outputDirectory?: string | null;
+  /** Git production branch — a separate field from the build/dev settings above, but same PATCH endpoint. */
+  productionBranch?: string;
+}
+
+/** Patches build/dev settings and/or the production branch. Used by both the "Build & Dev Settings" and "Git" sections. */
+export async function updateProject(token: string, projectId: string, patch: UpdateProjectInput, teamId?: string | null): Promise<VercelProjectDetail> {
+  const body: Record<string, any> = {};
+  if (patch.framework !== undefined) body.framework = patch.framework;
+  if (patch.rootDirectory !== undefined) body.rootDirectory = patch.rootDirectory || null;
+  if (patch.buildCommand !== undefined) body.buildCommand = patch.buildCommand || null;
+  if (patch.installCommand !== undefined) body.installCommand = patch.installCommand || null;
+  if (patch.devCommand !== undefined) body.devCommand = patch.devCommand || null;
+  if (patch.outputDirectory !== undefined) body.outputDirectory = patch.outputDirectory || null;
+  if (patch.productionBranch !== undefined) body.link = { productionBranch: patch.productionBranch };
+
+  const data = await vc(token, withTeam(`/v9/projects/${projectId}`, teamId), {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  return toProjectDetail(data);
+}
+
+/** Permanently deletes a project — the caller is responsible for confirming with the user first (see the Danger Zone's type-to-confirm modal). */
+export async function deleteProject(token: string, projectId: string, teamId?: string | null): Promise<void> {
+  await vc(token, withTeam(`/v9/projects/${projectId}`, teamId), { method: "DELETE" });
+}
+
+/** Lists environment variables. Values come back masked/decrypted only when Vercel allows it — treat as display-only either way (see EnvVar type). */
+export async function listEnvVars(token: string, projectId: string, teamId?: string | null): Promise<VercelEnvVar[]> {
+  const data = await vc(token, withTeam(`/v9/projects/${projectId}/env`, teamId));
+  return (data.envs || []).map((e: any) => ({ id: e.id, key: e.key, value: typeof e.value === "string" ? e.value : null, target: e.target || [] }));
+}
+
+export async function createEnvVar(token: string, projectId: string, envVar: EnvVarInput, teamId?: string | null): Promise<void> {
+  await vc(token, withTeam(`/v10/projects/${projectId}/env`, teamId), {
+    method: "POST",
+    body: JSON.stringify({ key: envVar.key, value: envVar.value, type: "encrypted", target: envVar.targets }),
+  });
+}
+
+export async function updateEnvVar(
+  token: string,
+  projectId: string,
+  envId: string,
+  patch: { value?: string; targets?: EnvVarInput["targets"] },
+  teamId?: string | null
+): Promise<void> {
+  const body: Record<string, any> = {};
+  if (patch.value !== undefined) body.value = patch.value;
+  if (patch.targets !== undefined) body.target = patch.targets;
+  await vc(token, withTeam(`/v9/projects/${projectId}/env/${envId}`, teamId), {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteEnvVar(token: string, projectId: string, envId: string, teamId?: string | null): Promise<void> {
+  await vc(token, withTeam(`/v9/projects/${projectId}/env/${envId}`, teamId), { method: "DELETE" });
+}
+
+export async function listDomains(token: string, projectId: string, teamId?: string | null): Promise<VercelDomain[]> {
+  const data = await vc(token, withTeam(`/v9/projects/${projectId}/domains`, teamId));
+  return (data.domains || []).map((d: any) => ({ name: d.name, verified: Boolean(d.verified) }));
+}
+
+export async function removeDomain(token: string, projectId: string, domain: string, teamId?: string | null): Promise<void> {
+  await vc(token, withTeam(`/v9/projects/${projectId}/domains/${encodeURIComponent(domain)}`, teamId), { method: "DELETE" });
+}
+
+/** Most recent deployments for a project, newest first. */
+export async function listDeployments(token: string, projectId: string, teamId?: string | null): Promise<VercelDeployment[]> {
+  const data = await vc(token, withTeam(`/v6/deployments?projectId=${projectId}&limit=15`, teamId));
+  return (data.deployments || []).map((d: any) => ({
+    id: d.uid,
+    url: `https://${d.url}`,
+    state: d.state || d.readyState,
+    target: d.target ?? null,
+    createdAt: d.createdAt ?? d.created,
+  }));
+}
+
+/** Triggers a fresh deployment of the project's latest deployment (same source, rebuilt from scratch). */
+export async function redeployLatest(token: string, projectId: string, teamId?: string | null): Promise<VercelDeployment> {
+  const deployments = await listDeployments(token, projectId, teamId);
+  const latest = deployments[0];
+  if (!latest) throw new VercelApiError(404, "no_deployment", "This project has no deployments to redeploy yet.");
+
+  const project = await getProject(token, projectId, teamId);
+  const data = await vc(token, withTeam("/v13/deployments", teamId), {
+    method: "POST",
+    body: JSON.stringify({
+      name: project.name,
+      deploymentId: latest.id,
+      target: latest.target || "production",
+    }),
+  });
+  return { id: data.id, url: `https://${data.url}`, state: data.readyState || data.state, target: data.target ?? null, createdAt: data.createdAt };
+}
+
+/** Promotes an existing (already-built) deployment to production, without rebuilding. */
+export async function promoteDeployment(token: string, projectId: string, deploymentId: string, teamId?: string | null): Promise<void> {
+  await vc(token, withTeam(`/v10/projects/${projectId}/promote/${deploymentId}`, teamId), { method: "POST" });
+}

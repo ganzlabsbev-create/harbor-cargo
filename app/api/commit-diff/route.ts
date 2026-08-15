@@ -11,8 +11,22 @@ import { recordProjectPush } from "@/lib/db";
 import { fetchBlobBuffer } from "@/lib/blob-fetch";
 
 interface IncomingChange {
+  /** Destination path in the repo. */
   path: string;
   action: "add" | "replace" | "delete";
+  /**
+   * For add/replace: where to read the content from within the extracted
+   * ZIP, if different from `path` (a file that was dragged to a new folder
+   * before confirming keeps its original ZIP location but targets a new
+   * repo path). Defaults to `path` when omitted.
+   */
+  zipPath?: string;
+  /**
+   * For add/replace: reuse an existing blob instead of reading from the
+   * ZIP — used for a pure repo-side rename of a file that was never in the
+   * ZIP to begin with (see DiffTreeView's drag support for repo-only files).
+   */
+  sha?: string;
 }
 
 /**
@@ -48,7 +62,12 @@ export async function POST(req: NextRequest) {
     typeof p === "string" && p.length > 0 && !p.startsWith("/") && !p.split("/").includes("..");
   if (
     changes.length === 0 ||
-    !changes.every((c) => isSafePath(c.path) && ["add", "replace", "delete"].includes(c.action))
+    !changes.every(
+      (c) =>
+        isSafePath(c.path) &&
+        ["add", "replace", "delete"].includes(c.action) &&
+        (c.zipPath === undefined || isSafePath(c.zipPath))
+    )
   ) {
     await del(blobPathname).catch(() => {});
     return NextResponse.json({ ok: false, error: "no_changes" }, { status: 400 });
@@ -61,9 +80,11 @@ export async function POST(req: NextRequest) {
 
     const fileChanges: FileChange[] = changes.map((c) => {
       if (c.action === "delete") return { path: c.path, action: "delete" };
-      const abs = path.join(extracted.extractDir, c.path);
+      if (c.sha) return { path: c.path, action: c.action, sha: c.sha };
+      const zipPath = c.zipPath || c.path;
+      const abs = path.join(extracted.extractDir, zipPath);
       if (!abs.startsWith(extracted.extractDir) || !fs.existsSync(abs)) {
-        throw new Error(`File "${c.path}" was not found in the uploaded ZIP — try uploading it again.`);
+        throw new Error(`File "${zipPath}" was not found in the uploaded ZIP — try uploading it again.`);
       }
       return { path: c.path, action: c.action, content: fs.readFileSync(abs) };
     });

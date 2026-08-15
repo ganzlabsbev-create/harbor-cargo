@@ -267,6 +267,13 @@ export interface FileChange {
   path: string;
   action: "add" | "replace" | "delete";
   content?: Buffer;
+  /**
+   * Reuse an already-existing blob instead of uploading `content` as a new
+   * one. Used for a pure repo-side rename — moving a repo-only file the
+   * user never touched in the ZIP — where the file's bytes haven't changed,
+   * only its path.
+   */
+  sha?: string;
 }
 
 /** Commits an add/replace/delete set in one commit, preserving untouched files. */
@@ -298,6 +305,12 @@ export async function commitFileChanges(
   for (const change of changes) {
     if (change.action === "delete") {
       treeItems.push({ path: change.path, mode: "100644", type: "blob", sha: null });
+      continue;
+    }
+    if (change.sha) {
+      // Rename-only: the content already exists as this blob, just point
+      // the new path at it — no upload needed.
+      treeItems.push({ path: change.path, mode: "100644", type: "blob", sha: change.sha });
       continue;
     }
     if (!change.content) {

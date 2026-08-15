@@ -16,7 +16,7 @@ export default function ToolGrid() {
       description: t("tool_github_desc"),
     },
     {
-      href: "/tools/vercel/new",
+      href: "/tools/vercel",
       icon: Rocket,
       title: t("tool_vercel_title"),
       description: t("tool_vercel_desc"),

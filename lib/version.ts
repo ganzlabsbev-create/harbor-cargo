@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.10.0";
+export const APP_VERSION = "0.11.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.11.0",
+    date: "2026-08",
+    notes: [
+      "Update-existing-repo flow now supports the same drag-to-move-into-folder gesture the new-repo flow got in 0.9.0 — press and drag a file's handle onto any folder to relocate it before committing, and its add/replace/delete status follows it. Files marked for deletion are locked instead (can't be moved).",
+      "New: manage an existing Vercel project directly — pick it from the Vercel tool's new 'Manage a project' option to view an overview, edit Environment Variables and Domains, change Build & Dev Settings or the Git production branch, redeploy or promote a deployment, and delete the project (type-to-confirm).",
+      "The Vercel tool now opens on a chooser (Deploy a new project / Manage a project) instead of going straight into the create flow.",
+    ],
+  },
   {
     version: "0.10.0",
     date: "2026-08",

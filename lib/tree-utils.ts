@@ -65,20 +65,27 @@ export function basename(p: string): string {
   return idx === -1 ? p : p.slice(idx + 1);
 }
 
-/** Computes where a dragged file should land, deduping against paths already in use. */
+/**
+ * Computes where a dragged file should land, deduping against paths already
+ * in use. Collisions are checked case-insensitively (not just exact match) —
+ * two paths that only differ by case are the same file on a macOS/Windows
+ * checkout, so treating them as distinct would silently produce a repo that
+ * looks fine here but breaks on those systems (same class of problem as the
+ * case-collision warning surfaced during ZIP extraction, see lib/zip.ts).
+ */
 export function resolveMoveTarget(draggedPath: string, targetFolder: string, existingPaths: string[]): string {
   const name = basename(draggedPath);
   let candidate = targetFolder ? `${targetFolder}/${name}` : name;
   if (candidate === draggedPath) return candidate;
 
-  const taken = new Set(existingPaths);
-  if (!taken.has(candidate)) return candidate;
+  const taken = new Set(existingPaths.filter((p) => p !== draggedPath).map((p) => p.toLowerCase()));
+  if (!taken.has(candidate.toLowerCase())) return candidate;
 
   const dot = name.lastIndexOf(".");
   const stem = dot > 0 ? name.slice(0, dot) : name;
   const ext = dot > 0 ? name.slice(dot) : "";
   let i = 2;
-  while (taken.has(candidate)) {
+  while (taken.has(candidate.toLowerCase())) {
     const deduped = `${stem}-${i}${ext}`;
     candidate = targetFolder ? `${targetFolder}/${deduped}` : deduped;
     i++;
