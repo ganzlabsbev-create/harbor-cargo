@@ -12,8 +12,11 @@ import {
   Plus,
   Trash2,
   RefreshCcw,
+  GitBranch,
   ArrowUpCircle,
   AlertTriangle,
+  Copy,
+  Check,
 } from "lucide-react";
 import Header from "@/components/Header";
 import { useLang } from "@/lib/i18n-context";
@@ -57,6 +60,20 @@ interface Deployment {
 
 const ALL_TARGETS: Target[] = ["production", "preview", "development"];
 
+interface DeployError {
+  deploymentId: string;
+  message: string;
+  code: string | null;
+}
+
+/** Color-codes a deployment state badge — READY green, ERROR/CANCELED red, anything else (BUILDING/QUEUED/INITIALIZING) orange/in-progress. */
+function stateBadgeClass(state: string | null | undefined): string {
+  const s = (state || "").toUpperCase();
+  if (s === "READY") return "bg-accent-green/10 text-accent-green";
+  if (s === "ERROR" || s === "CANCELED") return "bg-accent-red/10 text-accent-red";
+  return "bg-harbor-orange/10 text-harbor-orange";
+}
+
 export default function VercelProjectDashboard({ params }: { params: { projectId: string } }) {
   const { t } = useLang();
   const router = useRouter();
@@ -67,37 +84,88 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
   const [section, setSection] = useState<Section>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Quick redeploy — kept at this level (not inside DeploymentsSection) so
-  // it's reachable from the header on every section, not just buried behind
-  // the ☰ menu. This is the fix for "changed an env var / pushed new files
-  // but Vercel is slow to pick it up" — one tap, no digging for it.
-  const [redeploying, setRedeploying] = useState(false);
-  const [redeployMsg, setRedeployMsg] = useState<string | null>(null);
+  // Two distinct quick actions, kept at this level (not inside
+  // DeploymentsSection) so they're reachable from every section, not just
+  // buried behind the ☰ menu:
+  // - deployFromGit: forces Vercel to pull the LATEST commit from GitHub
+  //   right now and deploy it — the fix for "I pushed new files but Vercel
+  //   hasn't picked them up yet".
+  // - rebuildLatest: rebuilds the existing latest deployment from the SAME
+  //   commit it already used — useful when a build just failed transiently
+  //   and you want to retry without new code.
+  const [gitDeploying, setGitDeploying] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
 
-  async function handleQuickRedeploy() {
-    setRedeploying(true);
-    setRedeployMsg(null);
+  // Failure details for the project's latest deployment, if it's currently
+  // in an ERROR/CANCELED state. Rendered as a bottom bar that only appears
+  // when there's actually something to show.
+  const [deployError, setDeployError] = useState<DeployError | null>(null);
+
+  async function refreshProject() {
     try {
-      const res = await fetch(`/api/vercel/projects/${projectId}/deployments/redeploy`, { method: "POST" });
+      const res = await fetch(`/api/vercel/projects/${projectId}`);
       const data = await res.json();
-      if (!data.ok) throw new Error(data.detail || data.error);
-      setRedeployMsg(t("redeploy_started"));
+      if (!data.ok) throw new Error(data.detail || data.error || "load_failed");
+      setProject(data.project);
+      await refreshDeployError(data.project.latestDeployment);
     } catch (err: any) {
-      setRedeployMsg(String(err?.message || err));
-    } finally {
-      setRedeploying(false);
+      setLoadError(String(err?.message || err));
+    }
+  }
+
+  async function refreshDeployError(latestDeployment: ProjectDetail["latestDeployment"]) {
+    const state = (latestDeployment?.state || "").toUpperCase();
+    if (!latestDeployment || (state !== "ERROR" && state !== "CANCELED")) {
+      setDeployError(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/vercel/projects/${projectId}/deployments/${latestDeployment.id}/error`);
+      const data = await res.json();
+      if (data.ok && data.deployError) setDeployError(data.deployError);
+      else setDeployError(null);
+    } catch {
+      // Couldn't fetch the detailed reason — not worth blocking the page over.
     }
   }
 
   useEffect(() => {
-    fetch(`/api/vercel/projects/${projectId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.ok) throw new Error(data.detail || data.error || "load_failed");
-        setProject(data.project);
-      })
-      .catch((err) => setLoadError(String(err?.message || err)));
+    refreshProject();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  async function handleDeployFromGit() {
+    setGitDeploying(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/vercel/projects/${projectId}/deployments/git-deploy`, { method: "POST" });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.detail || data.error);
+      setActionMsg(t("deploy_from_git_started"));
+      await refreshProject();
+    } catch (err: any) {
+      setActionMsg(String(err?.message || err));
+    } finally {
+      setGitDeploying(false);
+    }
+  }
+
+  async function handleRebuildLatest() {
+    setRebuilding(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch(`/api/vercel/projects/${projectId}/deployments/redeploy`, { method: "POST" });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.detail || data.error);
+      setActionMsg(t("redeploy_started"));
+      await refreshProject();
+    } catch (err: any) {
+      setActionMsg(String(err?.message || err));
+    } finally {
+      setRebuilding(false);
+    }
+  }
 
   const inputClass = "rounded-xl border border-base-border bg-base-surface px-4 py-3 text-ink outline-none focus:border-harbor-orange";
   const labelClass = "text-sm font-medium text-ink-dim";
@@ -113,7 +181,7 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
   ];
 
   return (
-    <main className="min-h-dvh bg-base-bg pb-16">
+    <main className="min-h-dvh bg-base-bg pb-24">
       <Header />
       <div className="mx-auto max-w-2xl px-4 py-6">
         <Link href="/tools/vercel/manage" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-dim">
@@ -124,49 +192,63 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
           <h1 className="min-w-0 truncate font-display text-xl font-bold tracking-tight text-ink">
             {project?.name || "..."}
           </h1>
-          {/* This row belongs to this page only — it is NOT the app's main header/nav. */}
-          <div className="flex shrink-0 items-center gap-2">
+          {/* This menu belongs to this page only — it is NOT the app's main header/nav. */}
+          <div className="relative shrink-0">
             <button
-              onClick={handleQuickRedeploy}
-              disabled={redeploying || !project}
-              aria-label={t("deployment_redeploy_button")}
-              title={t("deployment_redeploy_button")}
-              className="flex h-10 items-center gap-1.5 rounded-xl border border-base-border bg-base-surface px-3 text-sm font-medium text-ink disabled:opacity-50"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label={t("vercel_menu_label")}
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-base-border bg-base-surface text-ink"
             >
-              {redeploying ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
-              <span className="hidden sm:inline">{t("deployment_redeploy_button")}</span>
+              {menuOpen ? <X size={18} /> : <Menu size={18} />}
             </button>
-            <div className="relative">
-              <button
-                onClick={() => setMenuOpen((v) => !v)}
-                aria-label={t("vercel_menu_label")}
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-base-border bg-base-surface text-ink"
-              >
-                {menuOpen ? <X size={18} /> : <Menu size={18} />}
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 top-12 z-10 w-56 overflow-hidden rounded-xl border border-base-border bg-base-surface shadow-card">
-                  {MENU_ITEMS.map((item) => (
-                    <button
-                      key={item.key}
-                      onClick={() => {
-                        setSection(item.key);
-                        setMenuOpen(false);
-                      }}
-                      className={`block w-full px-4 py-2.5 text-left text-sm transition ${
-                        section === item.key ? "bg-harbor-orange/10 font-medium text-harbor-orange" : "text-ink-dim hover:bg-base-surface2"
-                      } ${item.key === "danger" ? "border-t border-base-border text-accent-red" : ""}`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {menuOpen && (
+              <div className="absolute right-0 top-12 z-10 w-56 overflow-hidden rounded-xl border border-base-border bg-base-surface shadow-card">
+                {MENU_ITEMS.map((item) => (
+                  <button
+                    key={item.key}
+                    onClick={() => {
+                      setSection(item.key);
+                      setMenuOpen(false);
+                    }}
+                    className={`block w-full px-4 py-2.5 text-left text-sm transition ${
+                      section === item.key ? "bg-harbor-orange/10 font-medium text-harbor-orange" : "text-ink-dim hover:bg-base-surface2"
+                    } ${item.key === "danger" ? "border-t border-base-border text-accent-red" : ""}`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-        {redeployMsg && <p className="mb-4 text-xs text-ink-dim">{redeployMsg}</p>}
-        {!redeployMsg && <div className="mb-5" />}
+
+        {/* Quick deploy actions — always visible regardless of section, so
+            they're never more than one tap away on mobile. */}
+        <div className="mb-1 flex flex-col gap-2 sm:flex-row">
+          <button
+            onClick={handleDeployFromGit}
+            disabled={gitDeploying || !project}
+            title={t("deploy_from_git_hint")}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-harbor-orange px-4 py-2.5 text-sm font-semibold text-white shadow-glow-orange disabled:opacity-50"
+          >
+            {gitDeploying ? <Loader2 size={16} className="animate-spin" /> : <GitBranch size={16} />}
+            {t("deploy_from_git_button")}
+          </button>
+          <button
+            onClick={handleRebuildLatest}
+            disabled={rebuilding || !project}
+            title={t("redeploy_rebuild_hint")}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-base-border bg-base-surface px-4 py-2.5 text-sm font-medium text-ink-dim disabled:opacity-50"
+          >
+            {rebuilding ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+            {t("redeploy_rebuild_button")}
+          </button>
+        </div>
+        {actionMsg ? (
+          <p className="mb-4 text-xs text-ink-dim">{actionMsg}</p>
+        ) : (
+          <p className="mb-4 text-[11px] text-ink-faint">{t("deploy_from_git_hint")}</p>
+        )}
 
         {loadError ? (
           <p className="text-sm text-accent-red">{loadError}</p>
@@ -185,12 +267,89 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
             {section === "git" && (
               <GitSection projectId={projectId} project={project} setProject={setProject} t={t} inputClass={inputClass} labelClass={labelClass} />
             )}
-            {section === "deployments" && <DeploymentsSection projectId={projectId} t={t} />}
+            {section === "deployments" && (
+              <DeploymentsSection
+                projectId={projectId}
+                t={t}
+                onDeployFromGit={handleDeployFromGit}
+                gitDeploying={gitDeploying}
+              />
+            )}
             {section === "danger" && <DangerSection projectId={projectId} project={project} t={t} inputClass={inputClass} router={router} />}
           </>
         )}
       </div>
+
+      <DeployErrorBar deployError={deployError} t={t} />
     </main>
+  );
+}
+
+/**
+ * Fixed bar pinned to the bottom of the viewport — only rendered when the
+ * project's latest deployment actually failed. Collapsed by default (a
+ * short tap target so it doesn't cover content); tapping expands it into a
+ * bottom sheet with the full error text and a copy button.
+ */
+function DeployErrorBar({ deployError, t }: { deployError: DeployError | null; t: (k: any) => string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!deployError) setExpanded(false);
+  }, [deployError]);
+
+  if (!deployError) return null;
+
+  async function copyError() {
+    try {
+      await navigator.clipboard.writeText(deployError!.message);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard access denied — nothing more we can do here
+    }
+  }
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-center gap-2 bg-accent-red px-4 py-3 text-sm font-medium text-white shadow-[0_-2px_10px_rgba(0,0,0,0.15)]"
+      >
+        <AlertTriangle size={16} className="shrink-0" />
+        <span className="truncate">{t("deployment_error_bar_label")}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/50" onClick={() => setExpanded(false)}>
+      <div
+        className="flex max-h-[75vh] flex-col gap-3 rounded-t-2xl border-t border-base-border bg-base-surface p-4 shadow-card"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-accent-red">
+            <AlertTriangle size={18} />
+            <h2 className="font-display text-base font-semibold">{t("deployment_error_title")}</h2>
+          </div>
+          <button onClick={() => setExpanded(false)} aria-label={t("deployment_error_close")} className="text-ink-faint">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-xl bg-base-surface2 p-3">
+          <pre className="whitespace-pre-wrap break-words font-mono text-xs text-ink-dim">{deployError.message}</pre>
+        </div>
+        <button
+          onClick={copyError}
+          className="flex items-center justify-center gap-2 rounded-xl border border-base-border px-4 py-2.5 text-sm font-medium text-ink-dim"
+        >
+          {copied ? <Check size={15} className="text-accent-green" /> : <Copy size={15} />}
+          {copied ? t("deployment_error_copied") : t("deployment_error_copy_button")}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -237,7 +396,9 @@ function OverviewSection({ project, t }: { project: ProjectDetail; t: (k: any) =
             className="flex items-center justify-between gap-2 rounded-xl border border-base-border bg-base-surface2 px-4 py-3"
           >
             <span className="min-w-0 truncate text-sm text-ink">{project.latestDeployment.url.replace(/^https?:\/\//, "")}</span>
-            <span className="shrink-0 rounded-full bg-accent-green/10 px-2 py-0.5 text-xs text-accent-green">{project.latestDeployment.state}</span>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${stateBadgeClass(project.latestDeployment.state)}`}>
+              {project.latestDeployment.state}
+            </span>
           </a>
         ) : (
           <p className="text-sm text-ink-dim">{t("overview_no_deployment")}</p>
@@ -667,10 +828,19 @@ function GitSection({
   );
 }
 
-function DeploymentsSection({ projectId, t }: { projectId: string; t: (k: any) => string }) {
+function DeploymentsSection({
+  projectId,
+  t,
+  onDeployFromGit,
+  gitDeploying,
+}: {
+  projectId: string;
+  t: (k: any) => string;
+  onDeployFromGit: () => void;
+  gitDeploying: boolean;
+}) {
   const [deployments, setDeployments] = useState<Deployment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [redeploying, setRedeploying] = useState(false);
   const [promotingId, setPromotingId] = useState<string | null>(null);
 
   function load() {
@@ -683,21 +853,6 @@ function DeploymentsSection({ projectId, t }: { projectId: string; t: (k: any) =
       .catch((err) => setError(String(err?.message || err)));
   }
   useEffect(load, [projectId]);
-
-  async function redeploy() {
-    setRedeploying(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/vercel/projects/${projectId}/deployments/redeploy`, { method: "POST" });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.detail || data.error);
-      load();
-    } catch (err: any) {
-      setError(String(err?.message || err));
-    } finally {
-      setRedeploying(false);
-    }
-  }
 
   async function promote(deploymentId: string) {
     setPromotingId(deploymentId);
@@ -717,18 +872,24 @@ function DeploymentsSection({ projectId, t }: { projectId: string; t: (k: any) =
   return (
     <div className="flex flex-col gap-4">
       {error && <p className="text-sm text-accent-red">{error}</p>}
+      {/* This section's own quick action IS the header's "deploy latest
+          from GitHub" button (replaces the old same-source-only Redeploy
+          that used to live here) — refreshes this list once it kicks off. */}
       <button
-        onClick={redeploy}
-        disabled={redeploying}
+        onClick={() => {
+          onDeployFromGit();
+          setTimeout(load, 1500);
+        }}
+        disabled={gitDeploying}
         className="flex items-center justify-center gap-2 rounded-xl bg-harbor-orange px-5 py-3 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
       >
-        {redeploying ? (
+        {gitDeploying ? (
           <>
-            <Loader2 size={16} className="animate-spin" /> {t("deployment_redeploying")}
+            <Loader2 size={16} className="animate-spin" /> {t("deploy_from_git_running")}
           </>
         ) : (
           <>
-            <RefreshCcw size={16} /> {t("deployment_redeploy_button")}
+            <GitBranch size={16} /> {t("deploy_from_git_button")}
           </>
         )}
       </button>
@@ -747,7 +908,7 @@ function DeploymentsSection({ projectId, t }: { projectId: string; t: (k: any) =
                 <a href={d.url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-sm text-harbor-blue">
                   {d.url.replace(/^https?:\/\//, "")}
                 </a>
-                <span className="shrink-0 rounded-full bg-base-surface px-2 py-0.5 text-xs text-ink-faint">{d.state}</span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${stateBadgeClass(d.state)}`}>{d.state}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-ink-faint">{d.target || "preview"}</span>

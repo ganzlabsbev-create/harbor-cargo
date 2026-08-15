@@ -409,3 +409,58 @@ export async function redeployLatest(token: string, projectId: string, teamId?: 
 export async function promoteDeployment(token: string, projectId: string, deploymentId: string, teamId?: string | null): Promise<void> {
   await vc(token, withTeam(`/v10/projects/${projectId}/promote/${deploymentId}`, teamId), { method: "POST" });
 }
+
+/**
+ * Forces a brand-new deployment sourced from the HEAD of the project's
+ * linked GitHub branch — as opposed to redeployLatest(), which just
+ * rebuilds whatever commit the latest deployment already used. This is
+ * the fix for "I pushed new files but Vercel hasn't picked them up" —
+ * doesn't wait for GitHub's webhook to trigger Vercel, just tells Vercel
+ * to go get the latest commit right now.
+ */
+export async function deployLatestFromGit(token: string, projectId: string, teamId?: string | null): Promise<VercelDeployment> {
+  const project = await vc(token, withTeam(`/v9/projects/${projectId}`, teamId));
+  const link = project.link;
+  if (!link?.type || !link?.repo) {
+    throw new VercelApiError(400, "no_git_link", "This project isn't linked to a Git repository, so there's no branch to pull from.");
+  }
+  const ref = link.productionBranch || "main";
+
+  const gitSource: Record<string, any> = { type: link.type, ref };
+  if (link.repoId) gitSource.repoId = link.repoId;
+  else {
+    gitSource.repo = link.repo;
+    if (link.org) gitSource.org = link.org;
+  }
+
+  const data = await vc(token, withTeam("/v13/deployments", teamId), {
+    method: "POST",
+    body: JSON.stringify({ name: project.name, project: projectId, target: "production", gitSource }),
+  });
+  return { id: data.id, url: `https://${data.url}`, state: data.readyState || data.state, target: data.target ?? null, createdAt: data.createdAt };
+}
+
+export interface VercelDeploymentError {
+  deploymentId: string;
+  message: string;
+  code: string | null;
+}
+
+/**
+ * Fetches the failure reason for a deployment, if it's in an ERROR/CANCELED
+ * state — used to surface "why didn't my deploy go through" directly in
+ * the app instead of the user having to dig through Vercel's own dashboard.
+ * Returns null for a deployment that isn't currently failed.
+ */
+export async function getDeploymentError(token: string, deploymentId: string, teamId?: string | null): Promise<VercelDeploymentError | null> {
+  const data = await vc(token, withTeam(`/v13/deployments/${deploymentId}`, teamId));
+  const state = String(data.readyState || data.state || "").toUpperCase();
+  if (state !== "ERROR" && state !== "CANCELED") return null;
+  const message =
+    data.errorMessage ||
+    data.error?.message ||
+    (state === "CANCELED"
+      ? "The deployment was canceled before it finished."
+      : "The deployment failed, but Vercel didn't return a specific error message.");
+  return { deploymentId, message, code: data.errorCode || data.error?.code || null };
+}
