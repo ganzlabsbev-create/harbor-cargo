@@ -67,6 +67,28 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
   const [section, setSection] = useState<Section>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Quick redeploy — kept at this level (not inside DeploymentsSection) so
+  // it's reachable from the header on every section, not just buried behind
+  // the ☰ menu. This is the fix for "changed an env var / pushed new files
+  // but Vercel is slow to pick it up" — one tap, no digging for it.
+  const [redeploying, setRedeploying] = useState(false);
+  const [redeployMsg, setRedeployMsg] = useState<string | null>(null);
+
+  async function handleQuickRedeploy() {
+    setRedeploying(true);
+    setRedeployMsg(null);
+    try {
+      const res = await fetch(`/api/vercel/projects/${projectId}/deployments/redeploy`, { method: "POST" });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.detail || data.error);
+      setRedeployMsg(t("redeploy_started"));
+    } catch (err: any) {
+      setRedeployMsg(String(err?.message || err));
+    } finally {
+      setRedeploying(false);
+    }
+  }
+
   useEffect(() => {
     fetch(`/api/vercel/projects/${projectId}`)
       .then((res) => res.json())
@@ -98,39 +120,53 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
           <ChevronLeft size={16} /> {t("back")}
         </Link>
 
-        <div className="mb-5 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <h1 className="min-w-0 truncate font-display text-xl font-bold tracking-tight text-ink">
             {project?.name || "..."}
           </h1>
-          {/* This menu belongs to this page only — it is NOT the app's main header/nav. */}
-          <div className="relative shrink-0">
+          {/* This row belongs to this page only — it is NOT the app's main header/nav. */}
+          <div className="flex shrink-0 items-center gap-2">
             <button
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-label={t("vercel_menu_label")}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-base-border bg-base-surface text-ink"
+              onClick={handleQuickRedeploy}
+              disabled={redeploying || !project}
+              aria-label={t("deployment_redeploy_button")}
+              title={t("deployment_redeploy_button")}
+              className="flex h-10 items-center gap-1.5 rounded-xl border border-base-border bg-base-surface px-3 text-sm font-medium text-ink disabled:opacity-50"
             >
-              {menuOpen ? <X size={18} /> : <Menu size={18} />}
+              {redeploying ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+              <span className="hidden sm:inline">{t("deployment_redeploy_button")}</span>
             </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-12 z-10 w-56 overflow-hidden rounded-xl border border-base-border bg-base-surface shadow-card">
-                {MENU_ITEMS.map((item) => (
-                  <button
-                    key={item.key}
-                    onClick={() => {
-                      setSection(item.key);
-                      setMenuOpen(false);
-                    }}
-                    className={`block w-full px-4 py-2.5 text-left text-sm transition ${
-                      section === item.key ? "bg-harbor-orange/10 font-medium text-harbor-orange" : "text-ink-dim hover:bg-base-surface2"
-                    } ${item.key === "danger" ? "border-t border-base-border text-accent-red" : ""}`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-label={t("vercel_menu_label")}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-base-border bg-base-surface text-ink"
+              >
+                {menuOpen ? <X size={18} /> : <Menu size={18} />}
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-12 z-10 w-56 overflow-hidden rounded-xl border border-base-border bg-base-surface shadow-card">
+                  {MENU_ITEMS.map((item) => (
+                    <button
+                      key={item.key}
+                      onClick={() => {
+                        setSection(item.key);
+                        setMenuOpen(false);
+                      }}
+                      className={`block w-full px-4 py-2.5 text-left text-sm transition ${
+                        section === item.key ? "bg-harbor-orange/10 font-medium text-harbor-orange" : "text-ink-dim hover:bg-base-surface2"
+                      } ${item.key === "danger" ? "border-t border-base-border text-accent-red" : ""}`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+        {redeployMsg && <p className="mb-4 text-xs text-ink-dim">{redeployMsg}</p>}
+        {!redeployMsg && <div className="mb-5" />}
 
         {loadError ? (
           <p className="text-sm text-accent-red">{loadError}</p>
@@ -318,7 +354,7 @@ function EnvSection({ projectId, t, inputClass }: { projectId: string; t: (k: an
                   onChange={(e) => setPendingValues((p) => ({ ...p, [env.id]: e.target.value }))}
                   placeholder="••••••••"
                   type="password"
-                  className={`${inputClass} flex-1`}
+                  className={`${inputClass} min-w-0 flex-1`}
                 />
                 <button
                   onClick={() => saveVar(env)}
@@ -335,19 +371,19 @@ function EnvSection({ projectId, t, inputClass }: { projectId: string; t: (k: an
 
       <Card>
         <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">{t("env_add_button")}</p>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
           <input
             value={draft.key}
             onChange={(e) => setDraft((d) => ({ ...d, key: e.target.value }))}
             placeholder={t("env_key_placeholder")}
-            className={`${inputClass} flex-1`}
+            className={`${inputClass} w-full`}
           />
           <input
             value={draft.value}
             onChange={(e) => setDraft((d) => ({ ...d, value: e.target.value }))}
             placeholder={t("env_value_placeholder")}
             type="password"
-            className={`${inputClass} flex-1`}
+            className={`${inputClass} w-full`}
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -463,7 +499,7 @@ function DomainsSection({ projectId, t, inputClass }: { projectId: string; t: (k
             value={newDomain}
             onChange={(e) => setNewDomain(e.target.value)}
             placeholder={t("domain_add_placeholder")}
-            className={`${inputClass} flex-1`}
+            className={`${inputClass} min-w-0 flex-1`}
           />
           <button
             onClick={addDomain}
