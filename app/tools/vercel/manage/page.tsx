@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ChevronLeft, Loader2, Rocket, Triangle } from "lucide-react";
 import Header from "@/components/Header";
 import { useLang } from "@/lib/i18n-context";
@@ -17,7 +16,6 @@ interface ProjectOption {
 
 export default function VercelManagePickerPage() {
   const { t } = useLang();
-  const router = useRouter();
 
   const [vercelConnected, setVercelConnected] = useState<boolean | null>(null);
   const [projects, setProjects] = useState<ProjectOption[] | null>(null);
@@ -77,9 +75,10 @@ export default function VercelManagePickerPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {projects!.map((p) => (
-              <button
+              <Link
                 key={p.id}
-                onClick={() => router.push(`/tools/vercel/manage/${p.id}`)}
+                href={`/tools/vercel/manage/${p.id}`}
+                prefetch
                 className="flex items-center gap-3 rounded-xl border border-base-border bg-base-surface px-4 py-3 text-left text-sm text-ink transition active:scale-[0.99]"
               >
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-base-border bg-base-surface2 text-ink-faint">
@@ -90,7 +89,7 @@ export default function VercelManagePickerPage() {
                   {p.latestUrl && <p className="truncate text-xs text-ink-faint">{p.latestUrl.replace(/^https?:\/\//, "")}</p>}
                 </div>
                 {p.framework && <span className="shrink-0 text-xs text-ink-faint">{p.framework}</span>}
-              </button>
+              </Link>
             ))}
           </div>
         )}
