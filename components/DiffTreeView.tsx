@@ -1,8 +1,11 @@
 "use client";
 
-import { createContext, useContext, useRef, useState } from "react";
+import { createContext, useContext, useRef } from "react";
 import { Folder, File as FileIcon, GripVertical, Lock } from "lucide-react";
 import CircleCheckbox from "./CircleCheckbox";
+import { basename } from "@/lib/tree-utils";
+import { useDragTree } from "@/lib/use-drag-tree";
+import DragGhost from "./DragGhost";
 
 export type DiffStatus = "modified" | "add" | "unchanged";
 
@@ -52,13 +55,9 @@ function sortDiffTree(nodes: DiffTreeNode[]) {
   nodes.forEach((n) => n.children && sortDiffTree(n.children));
 }
 
-interface DragState {
+interface DragCtx {
   draggingOrigPath: string | null;
   hoverFolder: string | null;
-}
-
-interface DragCtx {
-  state: DragState;
   startDrag: (origPath: string, clientX: number, clientY: number) => void;
 }
 
@@ -67,8 +66,9 @@ const DragContext = createContext<DragCtx | null>(null);
 /**
  * File tree with per-file selection for the "update existing repo" flow,
  * plus drag-to-move-into-folder (same pointer-capture pattern as
- * EditableTreeView, adapted so drag identity follows origPath — a file's
- * add/replace/delete status must survive being dragged to a new spot).
+ * EditableTreeView, via the shared useDragTree hook — see
+ * lib/use-drag-tree.ts — adapted so drag identity follows origPath — a
+ * file's add/replace/delete status must survive being dragged to a new spot).
  * - orange = modified (in both zip and repo) — checking it means "replace"
  * - green  = add (only in zip) — checking it means "add to repo"
  * - gray → red strikethrough = unchanged (only in repo) — checking it marks it for deletion
@@ -95,42 +95,18 @@ export default function DiffTreeView({
   onToggleDelete: (origPath: string) => void;
   onMove: (origPath: string, targetFolder: string) => void;
 }) {
-  const [state, setState] = useState<DragState>({ draggingOrigPath: null, hoverFolder: null });
-  const stateRef = useRef(state);
-  stateRef.current = state;
-
-  function startDrag(origPath: string, startX: number, startY: number) {
-    setState({ draggingOrigPath: origPath, hoverFolder: null });
-
-    function findFolderAt(x: number, y: number): string | null {
-      const el = document.elementFromPoint(x, y);
-      const row = el?.closest("[data-drop-folder]") as HTMLElement | null;
-      return row ? row.getAttribute("data-drop-folder") : null;
-    }
-
-    function onPointerMove(e: PointerEvent) {
-      const folder = findFolderAt(e.clientX, e.clientY);
-      setState((s) => ({ ...s, hoverFolder: folder }));
-    }
-
-    function onPointerUp(e: PointerEvent) {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      const folder = findFolderAt(e.clientX, e.clientY);
-      const dragging = stateRef.current.draggingOrigPath;
-      if (dragging && folder !== null) {
-        onMove(dragging, folder);
-      }
-      setState({ draggingOrigPath: null, hoverFolder: null });
-    }
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-  }
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const { state, startDrag } = useDragTree(onMove);
 
   return (
-    <DragContext.Provider value={{ state, startDrag }}>
-      <div data-drop-folder="">
+    <DragContext.Provider
+      value={{
+        draggingOrigPath: state.draggingId,
+        hoverFolder: state.hoverFolder,
+        startDrag: (origPath, x, y) => startDrag(origPath, x, y, rootRef.current),
+      }}
+    >
+      <div data-drop-folder="" ref={rootRef}>
         <DiffTreeRows
           nodes={nodes}
           depth={0}
@@ -142,6 +118,9 @@ export default function DiffTreeView({
           onToggleDelete={onToggleDelete}
         />
       </div>
+      {state.draggingId && state.pointer && (
+        <DragGhost x={state.pointer.x} y={state.pointer.y} name={basename(state.draggingId)} />
+      )}
     </DragContext.Provider>
   );
 }
@@ -166,7 +145,7 @@ function DiffTreeRows({
   onToggleDelete: (origPath: string) => void;
 }) {
   const ctx = useContext(DragContext)!;
-  const { draggingOrigPath, hoverFolder } = ctx.state;
+  const { draggingOrigPath, hoverFolder } = ctx;
 
   return (
     <div style={{ paddingLeft: depth ? 16 : 0 }}>

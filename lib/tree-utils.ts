@@ -66,29 +66,43 @@ export function basename(p: string): string {
 }
 
 /**
- * Computes where a dragged file should land, deduping against paths already
- * in use. Collisions are checked case-insensitively (not just exact match) —
- * two paths that only differ by case are the same file on a macOS/Windows
- * checkout, so treating them as distinct would silently produce a repo that
- * looks fine here but breaks on those systems (same class of problem as the
- * case-collision warning surfaced during ZIP extraction, see lib/zip.ts).
+ * Computes the plain target path for a drag-move — just "what folder + what
+ * filename", no collision handling. Callers check for a collision separately
+ * (see findMoveCollision) before deciding whether to apply this as-is or
+ * hand it to the user for a replace/rename choice.
  */
-export function resolveMoveTarget(draggedPath: string, targetFolder: string, existingPaths: string[]): string {
+export function computeMoveTarget(draggedPath: string, targetFolder: string): string {
   const name = basename(draggedPath);
-  let candidate = targetFolder ? `${targetFolder}/${name}` : name;
-  if (candidate === draggedPath) return candidate;
+  return targetFolder ? `${targetFolder}/${name}` : name;
+}
 
+/**
+ * Case-insensitively finds whichever existing path (other than the one being
+ * dragged) already occupies `candidate`. Case-insensitive for the same
+ * reason as the ZIP-extraction collision check (lib/zip.ts) — two paths
+ * that only differ by case collide on a real checkout even if they look
+ * "different" here.
+ */
+export function findMoveCollision(candidate: string, draggedPath: string, existingPaths: string[]): string | null {
+  const lower = candidate.toLowerCase();
+  return existingPaths.find((p) => p !== draggedPath && p.toLowerCase() === lower) ?? null;
+}
+
+/** Appends -2, -3, ... to the filename until `candidate` is free. Used for the "rename" side of a move collision. */
+export function dedupeMoveTarget(candidate: string, draggedPath: string, targetFolder: string, existingPaths: string[]): string {
   const taken = new Set(existingPaths.filter((p) => p !== draggedPath).map((p) => p.toLowerCase()));
   if (!taken.has(candidate.toLowerCase())) return candidate;
 
+  const name = basename(candidate);
   const dot = name.lastIndexOf(".");
   const stem = dot > 0 ? name.slice(0, dot) : name;
   const ext = dot > 0 ? name.slice(dot) : "";
   let i = 2;
-  while (taken.has(candidate.toLowerCase())) {
+  let result = candidate;
+  while (taken.has(result.toLowerCase())) {
     const deduped = `${stem}-${i}${ext}`;
-    candidate = targetFolder ? `${targetFolder}/${deduped}` : deduped;
+    result = targetFolder ? `${targetFolder}/${deduped}` : deduped;
     i++;
   }
-  return candidate;
+  return result;
 }

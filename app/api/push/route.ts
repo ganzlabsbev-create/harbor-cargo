@@ -57,12 +57,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const isSafeRelPath = (p: unknown): p is string =>
+      typeof p === "string" && p.length > 0 && !p.startsWith("/") && !p.split("/").includes("..");
+
+    // Files dropped via "replace" on a drag-collision (see
+    // components/ConfirmMoveDialog.tsx / EditableTreeView.tsx) — deleted
+    // first, before moves are applied, so the file that replaced them can
+    // actually take that spot (moves below skip a rename whose destination
+    // is already occupied).
+    const excludePaths: string[] = Array.isArray(body?.excludePaths) ? body.excludePaths : [];
+    for (const p of excludePaths) {
+      if (!isSafeRelPath(p)) continue;
+      const target = path.join(extracted.extractDir, p);
+      if (!target.startsWith(extracted.extractDir)) continue;
+      if (fs.existsSync(target)) fs.unlinkSync(target);
+    }
+
     // Apply any client-side drag-to-move renames before building the file
     // list to push — see components/EditableTreeView.tsx. Both sides are
     // validated so a crafted request can't write outside extractDir.
     const moves: Array<{ from: string; to: string }> = Array.isArray(body?.moves) ? body.moves : [];
-    const isSafeRelPath = (p: unknown): p is string =>
-      typeof p === "string" && p.length > 0 && !p.startsWith("/") && !p.split("/").includes("..");
     for (const mv of moves) {
       if (!isSafeRelPath(mv?.from) || !isSafeRelPath(mv?.to)) continue;
       const src = path.join(extracted.extractDir, mv.from);

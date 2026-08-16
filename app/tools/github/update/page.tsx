@@ -8,10 +8,11 @@ import UploadZone, { UploadedBlob } from "@/components/UploadZone";
 import DiffTreeView, { DiffStatus, buildDiffTree } from "@/components/DiffTreeView";
 import RepoIcon from "@/components/RepoIcon";
 import ZipWarnings from "@/components/ZipWarnings";
+import ConfirmMoveDialog from "@/components/ConfirmMoveDialog";
 import { useLang } from "@/lib/i18n-context";
 import { cleanupBlob, useBlobCleanup } from "@/lib/use-blob-cleanup";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
-import { resolveMoveTarget } from "@/lib/tree-utils";
+import { basename, computeMoveTarget, findMoveCollision, dedupeMoveTarget } from "@/lib/tree-utils";
 
 interface RepoOption {
   name: string;
@@ -59,6 +60,13 @@ export default function UpdateRepoPage() {
   // origPath -> blob sha, for repoOnly files only. Lets a repo-side rename
   // reuse the file's existing content instead of re-uploading it.
   const [repoOnlyShas, setRepoOnlyShas] = useState<Record<string, string>>({});
+  const [pendingMove, setPendingMove] = useState<{
+    origPath: string;
+    currentPath: string;
+    targetFolder: string;
+    candidate: string;
+    collidingPath: string;
+  } | null>(null);
 
   const [commitMessage, setCommitMessage] = useState("");
   const [committing, setCommitting] = useState(false);
@@ -156,17 +164,63 @@ export default function UpdateRepoPage() {
     return buildDiffTree(items);
   }, [diff, pathMap]);
 
+  /** modified/add/unchanged for a given origPath, or null if it's not part of the current diff. */
+  function statusOf(origPath: string): DiffStatus | null {
+    if (!diff) return null;
+    if (diff.modified.includes(origPath)) return "modified";
+    if (diff.zipOnly.includes(origPath)) return "add";
+    if (diff.repoOnly.some((r) => r.path === origPath)) return "unchanged";
+    return null;
+  }
+
   function handleMove(origPath: string, targetFolder: string) {
     // Files marked for deletion can't be dragged — DiffTreeView already
     // disables their drag handle, but guard here too in case of a stray call.
     if (selectedDelete.has(origPath)) return;
-    setPathMap((prev) => {
-      const currentPath = prev[origPath];
-      if (currentPath === undefined) return prev;
-      const newPath = resolveMoveTarget(currentPath, targetFolder, Object.values(prev));
-      if (newPath === currentPath) return prev;
-      return { ...prev, [origPath]: newPath };
-    });
+    const currentPath = pathMap[origPath];
+    if (currentPath === undefined) return;
+    const candidate = computeMoveTarget(currentPath, targetFolder);
+    if (candidate === currentPath) return;
+
+    const collidingPath = findMoveCollision(candidate, currentPath, Object.values(pathMap));
+    if (collidingPath) {
+      setPendingMove({ origPath, currentPath, targetFolder, candidate, collidingPath });
+      return;
+    }
+    setPathMap((prev) => ({ ...prev, [origPath]: candidate }));
+  }
+
+  function resolvePendingMove(action: "replace" | "rename") {
+    if (!pendingMove) return;
+    const { origPath, currentPath, targetFolder, candidate, collidingPath } = pendingMove;
+
+    if (action === "rename") {
+      const deduped = dedupeMoveTarget(candidate, currentPath, targetFolder, Object.values(pathMap));
+      setPathMap((prev) => ({ ...prev, [origPath]: deduped }));
+      setPendingMove(null);
+      return;
+    }
+
+    const collidingOrigPath = Object.keys(pathMap).find((k) => pathMap[k] === collidingPath && k !== origPath);
+    const collidingStatus = collidingOrigPath ? statusOf(collidingOrigPath) : null;
+
+    if (collidingOrigPath && collidingStatus === "unchanged") {
+      // Existing, untouched repo file — "replace" means it should no longer
+      // exist at that path, so mark it for deletion the same way the
+      // checkbox would, then let the dragged file take its spot.
+      setSelectedDelete((s) => new Set(s).add(collidingOrigPath));
+      setPathMap((prev) => ({ ...prev, [origPath]: candidate }));
+    } else if (collidingOrigPath) {
+      // The thing in the way is itself content from this ZIP (modified/add)
+      // — it might be selected for the commit, so never silently drop it.
+      // Bump it to the next free -2/-3 name instead and give the dragged
+      // file the clean one it asked for.
+      const bumped = dedupeMoveTarget(collidingPath, currentPath, targetFolder, Object.values(pathMap));
+      setPathMap((prev) => ({ ...prev, [collidingOrigPath]: bumped, [origPath]: candidate }));
+    } else {
+      setPathMap((prev) => ({ ...prev, [origPath]: candidate }));
+    }
+    setPendingMove(null);
   }
 
   const addCount = selectedAdd.size;
@@ -410,6 +464,15 @@ export default function UpdateRepoPage() {
           </div>
         )}
       </div>
+      {pendingMove && (
+        <ConfirmMoveDialog
+          fileName={basename(pendingMove.collidingPath)}
+          onReplace={() => resolvePendingMove("replace")}
+          onRename={() => resolvePendingMove("rename")}
+          onCancel={() => setPendingMove(null)}
+          t={t}
+        />
+      )}
     </main>
   );
 }

@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.12.0";
+export const APP_VERSION = "0.13.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.13.0",
+    date: "2026-08",
+    notes: [
+      "Dragging a file in the file tree (new repo upload and update-repo diff view) now shows a floating chip that follows your finger, and auto-scrolls the list when you drag near its top/bottom edge — no more getting stuck at the visible edge with a long file list.",
+      "Dragging a file onto a folder that already has a same-named file no longer silently renames it with a -2 suffix. You're asked to either replace the existing file or rename the one you dragged.",
+    ],
+  },
   {
     version: "0.12.0",
     date: "2026-08",

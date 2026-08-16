@@ -7,9 +7,10 @@ import Header from "@/components/Header";
 import UploadZone, { UploadedBlob } from "@/components/UploadZone";
 import EditableTreeView from "@/components/EditableTreeView";
 import ZipWarnings from "@/components/ZipWarnings";
+import ConfirmMoveDialog from "@/components/ConfirmMoveDialog";
 import { useLang } from "@/lib/i18n-context";
 import { useBlobCleanup } from "@/lib/use-blob-cleanup";
-import { flattenFiles, buildTreeFromPaths, resolveMoveTarget } from "@/lib/tree-utils";
+import { flattenFiles, buildTreeFromPaths, basename, computeMoveTarget, findMoveCollision, dedupeMoveTarget } from "@/lib/tree-utils";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
 
 interface AnalyzeResult {
@@ -33,6 +34,18 @@ export default function NewRepoPage() {
   // Maps original extracted path -> current (possibly dragged-to) path.
   // Only entries that actually changed are sent to the server on push.
   const [pathMap, setPathMap] = useState<Record<string, string>>({});
+  // Original extracted paths dropped via "replace" on a drag collision — the
+  // server deletes these from the extracted ZIP before pushing (see
+  // app/api/push/route.ts) so the file they were replaced by can actually
+  // take that spot instead of both ending up in the repo.
+  const [excludedPaths, setExcludedPaths] = useState<Set<string>>(new Set());
+  const [pendingMove, setPendingMove] = useState<{
+    originalPath: string;
+    currentPath: string;
+    targetFolder: string;
+    candidate: string;
+    collidingPath: string;
+  } | null>(null);
   const pushElapsed = useElapsedSeconds(pushing);
 
   // Deletes the uploaded blob if the user leaves without ever pushing.
@@ -51,13 +64,38 @@ export default function NewRepoPage() {
   const displayTree = useMemo(() => buildTreeFromPaths(Object.values(pathMap)), [pathMap]);
 
   function handleMove(currentPath: string, targetFolder: string) {
-    setPathMap((prev) => {
-      const originalPath = Object.keys(prev).find((k) => prev[k] === currentPath);
-      if (!originalPath) return prev;
-      const newPath = resolveMoveTarget(currentPath, targetFolder, Object.values(prev));
-      if (newPath === currentPath) return prev;
-      return { ...prev, [originalPath]: newPath };
-    });
+    const originalPath = Object.keys(pathMap).find((k) => pathMap[k] === currentPath);
+    if (!originalPath) return;
+    const candidate = computeMoveTarget(currentPath, targetFolder);
+    if (candidate === currentPath) return;
+
+    const collidingPath = findMoveCollision(candidate, currentPath, Object.values(pathMap));
+    if (collidingPath) {
+      // Same-name file already sits at the target — ask before doing
+      // anything, instead of silently renaming (the old behavior).
+      setPendingMove({ originalPath, currentPath, targetFolder, candidate, collidingPath });
+      return;
+    }
+    setPathMap((prev) => ({ ...prev, [originalPath]: candidate }));
+  }
+
+  function resolvePendingMove(action: "replace" | "rename") {
+    if (!pendingMove) return;
+    const { originalPath, currentPath, targetFolder, candidate, collidingPath } = pendingMove;
+
+    if (action === "rename") {
+      const deduped = dedupeMoveTarget(candidate, currentPath, targetFolder, Object.values(pathMap));
+      setPathMap((prev) => ({ ...prev, [originalPath]: deduped }));
+    } else {
+      const collidingKey = Object.keys(pathMap).find((k) => pathMap[k] === collidingPath && k !== originalPath);
+      setPathMap((prev) => {
+        const next = { ...prev, [originalPath]: candidate };
+        if (collidingKey) delete next[collidingKey];
+        return next;
+      });
+      if (collidingKey) setExcludedPaths((prev) => new Set(prev).add(collidingKey));
+    }
+    setPendingMove(null);
   }
 
   async function handlePush() {
@@ -78,6 +116,7 @@ export default function NewRepoPage() {
           repoName,
           private: String(isPrivate),
           moves,
+          excludePaths: Array.from(excludedPaths),
         }),
       });
       const data = await res.json();
@@ -190,6 +229,15 @@ export default function NewRepoPage() {
           </>
         )}
       </div>
+      {pendingMove && (
+        <ConfirmMoveDialog
+          fileName={basename(pendingMove.collidingPath)}
+          onReplace={() => resolvePendingMove("replace")}
+          onRename={() => resolvePendingMove("rename")}
+          onCancel={() => setPendingMove(null)}
+          t={t}
+        />
+      )}
     </main>
   );
 }

@@ -1,16 +1,14 @@
 "use client";
 
-import { createContext, useContext, useRef, useState } from "react";
+import { createContext, useContext, useRef } from "react";
 import { Folder, File as FileIcon, GripVertical } from "lucide-react";
-import { SimpleTreeNode } from "@/lib/tree-utils";
-
-interface DragState {
-  draggingPath: string | null;
-  hoverFolder: string | null;
-}
+import { SimpleTreeNode, basename } from "@/lib/tree-utils";
+import { useDragTree } from "@/lib/use-drag-tree";
+import DragGhost from "./DragGhost";
 
 interface DragCtx {
-  state: DragState;
+  draggingPath: string | null;
+  hoverFolder: string | null;
   startDrag: (path: string, clientX: number, clientY: number) => void;
 }
 
@@ -18,8 +16,9 @@ const DragContext = createContext<DragCtx | null>(null);
 
 /**
  * Root wrapper — owns the single drag session (pointer capture, move/up
- * listeners) so nested rows just read from context. Root folder ("") is a
- * valid drop target via the outer container itself.
+ * listeners, auto-scroll, floating ghost — see lib/use-drag-tree.ts) so
+ * nested rows just read from context. Root folder ("") is a valid drop
+ * target via the outer container itself.
  */
 export default function EditableTreeView({
   nodes,
@@ -28,51 +27,30 @@ export default function EditableTreeView({
   nodes: SimpleTreeNode[];
   onMove: (path: string, targetFolder: string) => void;
 }) {
-  const [state, setState] = useState<DragState>({ draggingPath: null, hoverFolder: null });
-  const stateRef = useRef(state);
-  stateRef.current = state;
-
-  function startDrag(path: string, startX: number, startY: number) {
-    setState({ draggingPath: path, hoverFolder: null });
-
-    function findFolderAt(x: number, y: number): string | null {
-      const el = document.elementFromPoint(x, y);
-      const row = el?.closest("[data-drop-folder]") as HTMLElement | null;
-      return row ? row.getAttribute("data-drop-folder") : null;
-    }
-
-    function onPointerMove(e: PointerEvent) {
-      const folder = findFolderAt(e.clientX, e.clientY);
-      setState((s) => ({ ...s, hoverFolder: folder }));
-    }
-
-    function onPointerUp(e: PointerEvent) {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      const folder = findFolderAt(e.clientX, e.clientY);
-      const dragging = stateRef.current.draggingPath;
-      if (dragging && folder !== null) {
-        onMove(dragging, folder);
-      }
-      setState({ draggingPath: null, hoverFolder: null });
-    }
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-  }
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const { state, startDrag } = useDragTree(onMove);
 
   return (
-    <DragContext.Provider value={{ state, startDrag }}>
-      <div data-drop-folder="" className="rounded-lg">
+    <DragContext.Provider
+      value={{
+        draggingPath: state.draggingId,
+        hoverFolder: state.hoverFolder,
+        startDrag: (path, x, y) => startDrag(path, x, y, rootRef.current),
+      }}
+    >
+      <div data-drop-folder="" className="rounded-lg" ref={rootRef}>
         <TreeRows nodes={nodes} pathPrefix="" depth={0} />
       </div>
+      {state.draggingId && state.pointer && (
+        <DragGhost x={state.pointer.x} y={state.pointer.y} name={basename(state.draggingId)} />
+      )}
     </DragContext.Provider>
   );
 }
 
 function TreeRows({ nodes, pathPrefix, depth }: { nodes: SimpleTreeNode[]; pathPrefix: string; depth: number }) {
   const ctx = useContext(DragContext)!;
-  const { draggingPath, hoverFolder } = ctx.state;
+  const { draggingPath, hoverFolder } = ctx;
 
   return (
     <div style={{ paddingLeft: depth ? 14 : 0 }}>
