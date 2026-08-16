@@ -1,17 +1,19 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import type { DragGhostHandle } from "@/components/DragGhost";
 
 export interface DragTreeState {
   draggingId: string | null;
   hoverFolder: string | null;
-  pointer: { x: number; y: number } | null;
+  /** Set once at drag start, for the ghost's first paint position only — never updated on move (see below). */
+  startPointer: { x: number; y: number } | null;
 }
 
 const EDGE_ZONE = 48; // px from the scroll container's top/bottom edge that triggers auto-scroll
 const MAX_SCROLL_SPEED = 14; // px per animation frame right at the edge
 
-const INITIAL_STATE: DragTreeState = { draggingId: null, hoverFolder: null, pointer: null };
+const INITIAL_STATE: DragTreeState = { draggingId: null, hoverFolder: null, startPointer: null };
 
 function findFolderAt(x: number, y: number): string | null {
   const el = document.elementFromPoint(x, y);
@@ -34,10 +36,12 @@ function findScrollAncestor(el: HTMLElement | null): HTMLElement | null {
 /**
  * Drag-to-move-into-folder for a file tree, shared by EditableTreeView (new
  * repo) and DiffTreeView (update repo) so both behave identically:
- * - `draggingId`/`hoverFolder`/`pointer` drive the dimmed row, the folder
- *   highlight, and a floating ghost that follows the pointer (see
- *   DragGhost.tsx) — without the ghost, dragging past the visible list edge
- *   had nothing to show it was still active.
+ * - `draggingId`/`hoverFolder` drive the dimmed row and the folder
+ *   highlight; the floating ghost (DragGhost.tsx) is moved imperatively via
+ *   `ghostRef`, not through this state — see the note on `startPointer`
+ *   above and DragGhost's own comment. Only genuinely discrete changes
+ *   (drag start/end, hover folder actually changing) go through setState,
+ *   so the tree doesn't re-render on every pixel of pointer movement.
  * - While the pointer sits near the top/bottom edge of the tree's scroll
  *   container, this auto-scrolls that container so long lists can be
  *   reached without the drag getting stuck at the viewport boundary.
@@ -48,23 +52,37 @@ export function useDragTree(onDrop: (id: string, targetFolder: string) => void) 
   stateRef.current = state;
   const scrollElRef = useRef<HTMLElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const pointerRef = useRef({ x: 0, y: 0 });
+  const hoverFolderRef = useRef<string | null>(null);
+  const ghostRef = useRef<DragGhostHandle | null>(null);
 
   const startDrag = useCallback(
     (id: string, startX: number, startY: number, rootEl: HTMLElement | null) => {
       scrollElRef.current = findScrollAncestor(rootEl);
-      setState({ draggingId: id, hoverFolder: findFolderAt(startX, startY), pointer: { x: startX, y: startY } });
+      pointerRef.current = { x: startX, y: startY };
+      const initialFolder = findFolderAt(startX, startY);
+      hoverFolderRef.current = initialFolder;
+      setState({ draggingId: id, hoverFolder: initialFolder, startPointer: { x: startX, y: startY } });
+
+      function setHoverFolder(folder: string | null) {
+        if (folder === hoverFolderRef.current) return;
+        hoverFolderRef.current = folder;
+        setState((s) => ({ ...s, hoverFolder: folder }));
+      }
 
       function onPointerMove(e: PointerEvent) {
-        setState((s) => ({ ...s, hoverFolder: findFolderAt(e.clientX, e.clientY), pointer: { x: e.clientX, y: e.clientY } }));
+        pointerRef.current = { x: e.clientX, y: e.clientY };
+        ghostRef.current?.move(e.clientX, e.clientY);
+        setHoverFolder(findFolderAt(e.clientX, e.clientY));
       }
 
       function tick() {
-        const s = stateRef.current;
         const scrollEl = scrollElRef.current;
-        if (s.draggingId && s.pointer && scrollEl) {
+        if (stateRef.current.draggingId && scrollEl) {
+          const { x, y } = pointerRef.current;
           const rect = scrollEl.getBoundingClientRect();
-          const distTop = s.pointer.y - rect.top;
-          const distBottom = rect.bottom - s.pointer.y;
+          const distTop = y - rect.top;
+          const distBottom = rect.bottom - y;
           let dy = 0;
           if (distTop >= 0 && distTop < EDGE_ZONE) {
             dy = -MAX_SCROLL_SPEED * ((EDGE_ZONE - distTop) / EDGE_ZONE);
@@ -75,8 +93,7 @@ export function useDragTree(onDrop: (id: string, targetFolder: string) => void) 
             scrollEl.scrollTop += dy;
             // The pointer hasn't moved but the content under it just did —
             // recheck what's there so the hover highlight stays accurate.
-            const folder = findFolderAt(s.pointer.x, s.pointer.y);
-            if (folder !== s.hoverFolder) setState((prev) => ({ ...prev, hoverFolder: folder }));
+            setHoverFolder(findFolderAt(x, y));
           }
         }
         rafRef.current = requestAnimationFrame(tick);
@@ -90,6 +107,7 @@ export function useDragTree(onDrop: (id: string, targetFolder: string) => void) 
         const folder = findFolderAt(e.clientX, e.clientY);
         const dragging = stateRef.current.draggingId;
         if (dragging && folder !== null) onDrop(dragging, folder);
+        hoverFolderRef.current = null;
         setState(INITIAL_STATE);
       }
 
@@ -100,5 +118,5 @@ export function useDragTree(onDrop: (id: string, targetFolder: string) => void) 
     [onDrop]
   );
 
-  return { state, startDrag };
+  return { state, startDrag, ghostRef };
 }

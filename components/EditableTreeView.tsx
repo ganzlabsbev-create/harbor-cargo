@@ -28,7 +28,7 @@ export default function EditableTreeView({
   onMove: (path: string, targetFolder: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const { state, startDrag } = useDragTree(onMove);
+  const { state, startDrag, ghostRef } = useDragTree(onMove);
 
   return (
     <DragContext.Provider
@@ -41,8 +41,8 @@ export default function EditableTreeView({
       <div data-drop-folder="" className="rounded-lg" ref={rootRef}>
         <TreeRows nodes={nodes} pathPrefix="" depth={0} />
       </div>
-      {state.draggingId && state.pointer && (
-        <DragGhost x={state.pointer.x} y={state.pointer.y} name={basename(state.draggingId)} />
+      {state.draggingId && state.startPointer && (
+        <DragGhost ref={ghostRef} x={state.startPointer.x} y={state.startPointer.y} name={basename(state.draggingId)} />
       )}
     </DragContext.Provider>
   );

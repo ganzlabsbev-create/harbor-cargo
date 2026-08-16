@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.13.0";
+export const APP_VERSION = "0.14.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.14.0",
+    date: "2026-08",
+    notes: [
+      "Fixed stutter on the floating file chip while dragging — it now moves independently of React's render cycle instead of re-rendering the whole file tree on every pixel of movement.",
+      "Pages that load data (Settings, Vercel new/manage, GitHub update) now show an instant skeleton the moment you navigate, instead of the previous screen sitting frozen until the data arrives.",
+    ],
+  },
   {
     version: "0.13.0",
     date: "2026-08",
