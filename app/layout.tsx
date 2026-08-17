@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, IBM_Plex_Sans_Thai, Space_Grotesk } from "next/font/google";
 import { LangProvider } from "@/lib/i18n-context";
 import UpdateBanner from "@/components/UpdateBanner";
+import CaptainHarbor from "@/components/CaptainHarbor";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
@@ -54,6 +55,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <LangProvider>
           {children}
           <UpdateBanner />
+          {/* Rendered once at the root so the panel/conversation state
+              survives client-side navigation between pages — see
+              components/CaptainHarbor.tsx for why that matters. */}
+          <CaptainHarbor />
         </LangProvider>
         <Analytics />
       </body>
