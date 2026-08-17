@@ -16,6 +16,10 @@ backend/server ของ Harbor เอง ทุกอย่างยังท�
   กับ `src` (URL ของ WebContainer dev server) พร้อมคอมเมนต์อธิบายว่าทำไม `allow-same-origin`
   ในโหมด `src` ไม่ได้เพิ่มความเสี่ยง (เป็นคนละ origin จริงอยู่แล้ว)
 
+- **`components/PreviewConsole.tsx`** — ลบทิ้ง (ถูกแทนที่ด้วย `PreviewLog.tsx` แล้ว ไม่มีใคร
+  import ใช้อีก การเก็บไว้ทำให้ build พังเพราะ type ของ `ConsoleLine` ที่ widen ใน
+  `PreviewFrame.tsx` ไม่ตรงกับ `Record` แคบๆ ของไฟล์นี้อีกต่อไป — เจอตอน deploy รอบแรก แก้แล้ว)
+
 - **`components/PreviewLog.tsx`** (ใหม่) — log viewer รวม ใช้แสดงทั้ง console message จาก
   static preview และ install/dev process output จาก WebContainer (มี strip ANSI escape code
   ออกให้ด้วย เพราะ npm/Vite CLI ส่ง log มาพร้อมสี)
