@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import ToolCard from "./ToolCard";
 import { GithubMark, VercelMark } from "./BrandIcons";
 import { useLang } from "@/lib/i18n-context";
@@ -9,6 +10,12 @@ import { useLang } from "@/lib/i18n-context";
 export default function ToolGrid() {
   const { t } = useLang();
   const tools = [
+    {
+      href: "/tools/preview",
+      icon: <Image src="/harbor-preview.svg" alt="" width={28} height={28} unoptimized />,
+      title: t("tool_preview_title"),
+      description: t("tool_preview_desc"),
+    },
     {
       href: "/tools/github",
       icon: <GithubMark size={22} />,

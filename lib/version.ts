@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.14.0";
+export const APP_VERSION = "0.15.1";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,19 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.15.1",
+    date: "2026-08",
+    notes: ["Harbor Preview now shows its own logo mark on the home-screen tool card instead of a generic icon."],
+  },
+  {
+    version: "0.15.0",
+    date: "2026-08",
+    notes: [
+      "New tool: Harbor Preview. Upload a ZIP and preview static HTML/CSS/JavaScript projects right in the browser — file tree, live preview, console/error output, and reload — with nothing sent to Harbor's server to execute (Phase 1 of Harbor Preview; Node/framework projects aren't previewable yet).",
+      "From Harbor Preview, 'Create a new repository' and 'Update an existing repository' now hand off straight to the GitHub tool using the same uploaded file — no second upload, and you land right on the final confirm step.",
+    ],
+  },
   {
     version: "0.14.0",
     date: "2026-08",

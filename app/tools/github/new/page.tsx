@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ChevronLeft, CheckCircle2, ExternalLink, Loader2, FolderTree } from "lucide-react";
 import Header from "@/components/Header";
 import UploadZone, { UploadedBlob } from "@/components/UploadZone";
@@ -22,10 +23,19 @@ interface AnalyzeResult {
   warnings?: { oversizedFiles: string[]; caseCollisions: string[][]; skippedUnsafePaths: string[] };
 }
 
-export default function NewRepoPage() {
+function NewRepoPage() {
   const { t } = useLang();
+  const searchParams = useSearchParams();
+  // Carried over from Harbor Preview (?blobUrl&blobPathname&fileName) — the
+  // ZIP was already uploaded and analyzed there, so this skips straight to
+  // the tree + confirm screen instead of asking the user to upload again.
+  const carriedBlobUrl = searchParams.get("blobUrl");
+  const carriedBlobPathname = searchParams.get("blobPathname");
+  const carriedFileName = searchParams.get("fileName") || "";
+
   const [blob, setBlob] = useState<UploadedBlob | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
+  const [carryError, setCarryError] = useState<string | null>(null);
   const [repoName, setRepoName] = useState("");
   const [isPrivate, setIsPrivate] = useState(true);
   const [pushing, setPushing] = useState(false);
@@ -60,6 +70,25 @@ export default function NewRepoPage() {
       setRepoName(fileName.replace(/\.zip$/i, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-"));
     }
   }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!carriedBlobUrl || !carriedBlobPathname || analysis) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blobUrl: carriedBlobUrl, blobPathname: carriedBlobPathname }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "analyze_failed");
+        handleAnalyzed({ url: carriedBlobUrl, pathname: carriedBlobPathname }, data, carriedFileName);
+      } catch (err: any) {
+        setCarryError(String(err?.message || err));
+      }
+    })();
+  }, [carriedBlobUrl, carriedBlobPathname]);
 
   const displayTree = useMemo(() => buildTreeFromPaths(Object.values(pathMap)), [pathMap]);
 
@@ -153,7 +182,16 @@ export default function NewRepoPage() {
         ) : (
           <>
             {!analysis ? (
-              <UploadZone onAnalyzed={handleAnalyzed} />
+              carriedBlobUrl && !carryError ? (
+                <div className="flex items-center justify-center gap-2 rounded-2xl border border-base-border bg-base-surface p-8 text-sm text-ink-dim shadow-card">
+                  <Loader2 size={18} className="animate-spin" /> {t("upload_uploading")}
+                </div>
+              ) : (
+                <>
+                  {carryError && <p className="mb-3 text-sm text-accent-red">{carryError}</p>}
+                  <UploadZone onAnalyzed={handleAnalyzed} />
+                </>
+              )
             ) : (
               <div className="flex flex-col gap-5">
                 <div className="rounded-2xl border border-base-border bg-base-surface p-4 shadow-card">
@@ -239,5 +277,13 @@ export default function NewRepoPage() {
         />
       )}
     </main>
+  );
+}
+
+export default function NewRepoPageRoute() {
+  return (
+    <Suspense fallback={null}>
+      <NewRepoPage />
+    </Suspense>
   );
 }

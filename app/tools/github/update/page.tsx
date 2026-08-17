@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ChevronLeft, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 import Header from "@/components/Header";
 import UploadZone, { UploadedBlob } from "@/components/UploadZone";
@@ -36,8 +37,16 @@ function toggle(set: Set<string>, path: string): Set<string> {
   return next;
 }
 
-export default function UpdateRepoPage() {
+function UpdateRepoPage() {
   const { t } = useLang();
+  const searchParams = useSearchParams();
+  // Carried over from Harbor Preview (?blobUrl&blobPathname&fileName) — the
+  // ZIP is already uploaded, so once a repo is picked below we run the diff
+  // against it directly instead of showing the upload step again.
+  const carriedBlobUrl = searchParams.get("blobUrl");
+  const carriedBlobPathname = searchParams.get("blobPathname");
+  const [carryError, setCarryError] = useState<string | null>(null);
+  const [carryConsumed, setCarryConsumed] = useState(false);
   const [repos, setRepos] = useState<RepoOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<RepoOption | null>(null);
@@ -153,6 +162,36 @@ export default function UpdateRepoPage() {
     setPathMap(Object.fromEntries(allOrigPaths.map((p) => [p, p])));
     setRepoOnlyShas(Object.fromEntries(data.diff.repoOnly.map((r: { path: string; sha: string }) => [r.path, r.sha])));
   }
+
+  // Once a repo is selected, if a blob was carried over from Harbor
+  // Preview, run the diff against it automatically instead of showing the
+  // upload step. Guarded by carryConsumed so it only fires once — after
+  // that the flow behaves exactly like the manual-upload path.
+  useEffect(() => {
+    if (!selected || !carriedBlobUrl || !carriedBlobPathname || carryConsumed) return;
+    setCarryConsumed(true);
+    (async () => {
+      try {
+        const res = await fetch("/api/diff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            blobUrl: carriedBlobUrl,
+            blobPathname: carriedBlobPathname,
+            owner: selected.full_name.split("/")[0],
+            repo: selected.full_name.split("/")[1],
+            branch: selected.default_branch,
+          }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "diff_failed");
+        handleDiffed({ url: carriedBlobUrl, pathname: carriedBlobPathname }, data);
+      } catch (err: any) {
+        setCarryError(String(err?.message || err));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, carriedBlobUrl, carriedBlobPathname, carryConsumed]);
 
   const diffTree = useMemo(() => {
     if (!diff) return [];
@@ -364,13 +403,18 @@ export default function UpdateRepoPage() {
                   // The uploaded blob is only reused by /api/commit-diff — if
                   // we're leaving before that, nothing will ever delete it
                   // otherwise, so clean it up explicitly here.
-                  if (blob) cleanupBlob(blob.pathname);
+                  // Only clean up the blob here if it's NOT the one carried
+                  // over from Harbor Preview — that one may still be needed
+                  // to diff against whichever repo the user picks next.
+                  if (blob && blob.pathname !== carriedBlobPathname) cleanupBlob(blob.pathname);
                   setSelected(null);
                   setBlob(null);
                   setDiff(null);
                   setDiffWarnings(null);
                   setPathMap({});
                   setRepoOnlyShas({});
+                  setCarryConsumed(false);
+                  setCarryError(null);
                 }}
                 className="text-xs text-harbor-orange"
               >
@@ -379,12 +423,21 @@ export default function UpdateRepoPage() {
             </div>
 
             {!diff ? (
-              <UploadZone
-                onAnalyzed={handleDiffed}
-                endpoint="/api/diff"
-                extraFields={{ owner: selected.full_name.split("/")[0], repo: selected.full_name.split("/")[1], branch: selected.default_branch }}
-                uploadingLabel={t("loading_diff")}
-              />
+              carriedBlobUrl && !carryError ? (
+                <div className="flex items-center justify-center gap-2 rounded-2xl border border-base-border bg-base-surface p-8 text-sm text-ink-dim shadow-card">
+                  <Loader2 size={18} className="animate-spin" /> {t("loading_diff")}
+                </div>
+              ) : (
+                <>
+                  {carryError && <p className="mb-3 text-sm text-accent-red">{carryError}</p>}
+                  <UploadZone
+                    onAnalyzed={handleDiffed}
+                    endpoint="/api/diff"
+                    extraFields={{ owner: selected.full_name.split("/")[0], repo: selected.full_name.split("/")[1], branch: selected.default_branch }}
+                    uploadingLabel={t("loading_diff")}
+                  />
+                </>
+              )
             ) : (
               <>
                 {repoEmpty && <p className="text-xs text-ink-faint">{t("repo_empty_note")}</p>}
@@ -474,5 +527,13 @@ export default function UpdateRepoPage() {
         />
       )}
     </main>
+  );
+}
+
+export default function UpdateRepoPageRoute() {
+  return (
+    <Suspense fallback={null}>
+      <UpdateRepoPage />
+    </Suspense>
   );
 }
