@@ -1,6 +1,6 @@
 {
   "name": "harbor-cargo",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -13,6 +13,7 @@
     "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.8.0",
     "@vercel/postgres": "^0.10.0",
+    "@webcontainer/api": "^1.5.1",
     "adm-zip": "^0.5.14",
     "jszip": "^3.10.1",
     "lucide-react": "^0.417.0",

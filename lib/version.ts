@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.15.1";
+export const APP_VERSION = "0.16.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.16.0",
+    date: "2026-08",
+    notes: [
+      "Harbor Preview Phase 2: Node/framework projects (Next.js, Vite, Create React App, SvelteKit, Nuxt, Astro, Gatsby, Remix) now get a real dev-server preview, powered by an in-browser Node runtime (WebContainers) — npm install and the dev server both run client-side, nothing sent to Harbor's server. Falls back automatically to the existing static preview when a browser can't run one or a project isn't recognized.",
+      "Preview page now switches between Preview / Files / Logs through a ☰ menu instead of a fixed tab row, to leave room for the new install/dev-server log output without crowding the screen.",
+    ],
+  },
   {
     version: "0.15.1",
     date: "2026-08",

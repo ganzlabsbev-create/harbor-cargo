@@ -68,8 +68,9 @@ export interface BuiltPreview {
 
 /**
  * Builds a previewable document from extracted project files, or returns
- * null if there's no HTML entry point to preview (Phase 1 only handles
- * static HTML/CSS/JS — Node/framework projects come in a later phase).
+ * null if there's no HTML entry point to preview. Handles static HTML/CSS/JS
+ * projects — Node/framework projects go through lib/dev-server-preview.ts
+ * (Phase 2) instead, which falls back to this for anything it can't run.
  *
  * Best-effort only: relative references are matched by exact path or plain
  * basename inside quotes/parens (covers typical <link href>, <script src>,
