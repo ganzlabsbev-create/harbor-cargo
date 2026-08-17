@@ -15,6 +15,7 @@ export default function ToolGrid() {
       icon: <Image src="/harbor-preview.svg" alt="" width={28} height={28} unoptimized />,
       title: t("tool_preview_title"),
       description: t("tool_preview_desc"),
+      badge: "DEMO",
     },
     {
       href: "/tools/github",

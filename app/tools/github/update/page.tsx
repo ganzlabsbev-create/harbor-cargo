@@ -14,6 +14,7 @@ import { useLang } from "@/lib/i18n-context";
 import { cleanupBlob, useBlobCleanup } from "@/lib/use-blob-cleanup";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
 import { basename, computeMoveTarget, findMoveCollision, dedupeMoveTarget } from "@/lib/tree-utils";
+import { addRecent, removeRecent } from "@/lib/recents";
 
 interface RepoOption {
   name: string;
@@ -47,6 +48,12 @@ function UpdateRepoPage() {
   const carriedBlobPathname = searchParams.get("blobPathname");
   const [carryError, setCarryError] = useState<string | null>(null);
   const [carryConsumed, setCarryConsumed] = useState(false);
+  // Deep-link from the home page's "Recent" row (?owner=&repo=&branch=) —
+  // skips straight past the repo picker below instead of showing it.
+  const deepOwner = searchParams.get("owner");
+  const deepRepo = searchParams.get("repo");
+  const deepBranch = searchParams.get("branch");
+  const [deepLinkConsumed, setDeepLinkConsumed] = useState(false);
   const [repos, setRepos] = useState<RepoOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<RepoOption | null>(null);
@@ -59,6 +66,14 @@ function UpdateRepoPage() {
   const [selectedAdd, setSelectedAdd] = useState<Set<string>>(new Set());
   const [selectedDelete, setSelectedDelete] = useState<Set<string>>(new Set());
   const [diffWarnings, setDiffWarnings] = useState<{ oversizedFiles: string[]; caseCollisions: string[][]; skippedUnsafePaths: string[] } | null>(null);
+  // origPaths of repoOnly ("unchanged") files that got replaced-away by a
+  // dragged file landing on their path — hidden from the tree instead of
+  // being marked for deletion (see resolvePendingMove below for why a
+  // separate delete instruction here is actively harmful, not just redundant).
+  const [excludedRepoOnly, setExcludedRepoOnly] = useState<Set<string>>(new Set());
+  // origPaths of zipOnly ("add") files that got reclassified to display/act
+  // as a replace after landing on an existing repo file's path.
+  const [forcedReplace, setForcedReplace] = useState<Set<string>>(new Set());
 
   // Maps each file's original diff path -> its current (possibly
   // dragged-to) path. Keyed by origPath so a file's add/replace/delete
@@ -94,6 +109,36 @@ function UpdateRepoPage() {
       })
       .catch((err) => setLoadError(String(err?.message || err)));
   }, []);
+
+  // Deep-link from the home page's "Recent" row: once the repo list is in,
+  // try to auto-select the repo named in the URL instead of showing the
+  // picker. If it's gone (renamed/deleted/access revoked), drop the stale
+  // recent entry and fall back to the normal picker below.
+  useEffect(() => {
+    if (!repos || selected || deepLinkConsumed || !deepOwner || !deepRepo) return;
+    setDeepLinkConsumed(true);
+    const fullName = `${deepOwner}/${deepRepo}`;
+    const match = repos.find((r) => r.full_name === fullName);
+    if (match) {
+      setSelected(match);
+    } else {
+      removeRecent(`github-update:${fullName}:${deepBranch ?? ""}`);
+    }
+  }, [repos, selected, deepLinkConsumed, deepOwner, deepRepo, deepBranch]);
+
+  // Record this repo as a "recent" as soon as it's picked (manually or via
+  // the deep-link above) — localStorage only, see lib/recents.ts.
+  useEffect(() => {
+    if (!selected) return;
+    const [owner, repo] = selected.full_name.split("/");
+    addRecent({
+      id: `github-update:${selected.full_name}:${selected.default_branch}`,
+      type: "github-update",
+      label: selected.full_name,
+      sublabel: selected.default_branch,
+      href: `/tools/github/update?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(selected.default_branch)}`,
+    });
+  }, [selected]);
 
   // Repo icons load separately, in small batches, after the list itself
   // shows up — a logo lookup can cost several GitHub API calls each, so
@@ -154,6 +199,8 @@ function UpdateRepoPage() {
     setSelectedReplace(new Set(data.diff.modified));
     setSelectedAdd(new Set(data.diff.zipOnly));
     setSelectedDelete(new Set());
+    setExcludedRepoOnly(new Set());
+    setForcedReplace(new Set());
     const allOrigPaths: string[] = [
       ...data.diff.modified,
       ...data.diff.zipOnly,
@@ -197,11 +244,17 @@ function UpdateRepoPage() {
     if (!diff) return [];
     const items: { origPath: string; path: string; status: DiffStatus }[] = [
       ...diff.modified.map((p) => ({ origPath: p, path: pathMap[p] ?? p, status: "modified" as DiffStatus })),
-      ...diff.zipOnly.map((p) => ({ origPath: p, path: pathMap[p] ?? p, status: "add" as DiffStatus })),
-      ...diff.repoOnly.map((r) => ({ origPath: r.path, path: pathMap[r.path] ?? r.path, status: "unchanged" as DiffStatus })),
+      ...diff.zipOnly.map((p) => ({
+        origPath: p,
+        path: pathMap[p] ?? p,
+        status: (forcedReplace.has(p) ? "modified" : "add") as DiffStatus,
+      })),
+      ...diff.repoOnly
+        .filter((r) => !excludedRepoOnly.has(r.path))
+        .map((r) => ({ origPath: r.path, path: pathMap[r.path] ?? r.path, status: "unchanged" as DiffStatus })),
     ];
     return buildDiffTree(items);
-  }, [diff, pathMap]);
+  }, [diff, pathMap, excludedRepoOnly, forcedReplace]);
 
   /** modified/add/unchanged for a given origPath, or null if it's not part of the current diff. */
   function statusOf(origPath: string): DiffStatus | null {
@@ -244,11 +297,34 @@ function UpdateRepoPage() {
     const collidingStatus = collidingOrigPath ? statusOf(collidingOrigPath) : null;
 
     if (collidingOrigPath && collidingStatus === "unchanged") {
-      // Existing, untouched repo file — "replace" means it should no longer
-      // exist at that path, so mark it for deletion the same way the
-      // checkbox would, then let the dragged file take its spot.
-      setSelectedDelete((s) => new Set(s).add(collidingOrigPath));
+      // Existing, untouched repo file at the target path. Its content gets
+      // overwritten automatically once the dragged file's add/replace entry
+      // lands at this same path (GitHub replaces in place when a Tree entry
+      // reuses an existing path under base_tree) — a separate delete
+      // instruction for that path is not just redundant but harmful: two
+      // Tree entries at one path is ambiguous, GitHub just keeps whichever
+      // one it processes last, and since delete would land after add, the
+      // file that was just added would silently disappear. So: no delete
+      // here, ever. Just hide the old repoOnly row and, if the dragged file
+      // was a plain "add", reclassify it to read/act as a "replace".
+      setExcludedRepoOnly((s) => new Set(s).add(collidingOrigPath));
       setPathMap((prev) => ({ ...prev, [origPath]: candidate }));
+      if (statusOf(origPath) === "add") {
+        setSelectedAdd((s) => {
+          if (!s.has(origPath)) return s;
+          const next = new Set(s);
+          next.delete(origPath);
+          return next;
+        });
+        setSelectedReplace((s) => new Set(s).add(origPath));
+        setForcedReplace((s) => new Set(s).add(origPath));
+      }
+      // statusOf(origPath) === "unchanged" (a pure repo-side rename landing
+      // on another untouched file) has no "replace" bucket to land in yet —
+      // known limitation, left for a follow-up. The dragged file still just
+      // takes over the path with no explicit change entry, and the
+      // handleCommit safety net below guarantees no duplicate-path entries
+      // either way.
     } else if (collidingOrigPath) {
       // The thing in the way is itself content from this ZIP (modified/add)
       // — it might be selected for the commit, so never silently drop it.
@@ -309,13 +385,22 @@ function UpdateRepoPage() {
       // marked for deletion — a pure repo-side rename, reusing the existing
       // blob sha so the content doesn't need to round-trip through the ZIP.
       for (const r of diff.repoOnly) {
-        if (selectedDelete.has(r.path)) continue;
+        if (selectedDelete.has(r.path) || excludedRepoOnly.has(r.path)) continue;
         const cur = pathMap[r.path] ?? r.path;
         if (cur !== r.path) {
           changes.push({ path: r.path, action: "delete" });
           changes.push({ path: cur, action: "add", sha: repoOnlyShas[r.path] });
         }
       }
+
+      // Safety net: after the fix above this should never trigger, but if
+      // any path still ended up with both a delete and an add/replace
+      // entry, content always wins — GitHub keeps whichever Tree entry it
+      // sees last for a given path, so a stray delete could otherwise
+      // silently erase content that was just added. See resolvePendingMove
+      // for the root-cause fix this backstops.
+      const contentPaths = new Set(changes.filter((c) => c.action === "add" || c.action === "replace").map((c) => c.path));
+      const dedupedChanges = changes.filter((c) => c.action !== "delete" || !contentPaths.has(c.path));
 
       const res = await fetch("/api/commit-diff", {
         method: "POST",
@@ -327,7 +412,7 @@ function UpdateRepoPage() {
           repo,
           branch: selected.default_branch,
           commitMessage: commitMessage || t("commit_message_placeholder"),
-          changes,
+          changes: dedupedChanges,
         }),
       });
       const data = await res.json();
@@ -413,6 +498,8 @@ function UpdateRepoPage() {
                   setDiffWarnings(null);
                   setPathMap({});
                   setRepoOnlyShas({});
+                  setExcludedRepoOnly(new Set());
+                  setForcedReplace(new Set());
                   setCarryConsumed(false);
                   setCarryError(null);
                 }}

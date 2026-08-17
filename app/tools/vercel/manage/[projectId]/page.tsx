@@ -21,6 +21,7 @@ import {
 import Header from "@/components/Header";
 import { useLang } from "@/lib/i18n-context";
 import { VERCEL_FRAMEWORKS } from "@/lib/vercel-frameworks";
+import { addRecent, removeRecent } from "@/lib/recents";
 
 type Section = "overview" | "env" | "domains" | "build" | "git" | "deployments" | "danger";
 
@@ -106,11 +107,30 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
     try {
       const res = await fetch(`/api/vercel/projects/${projectId}`);
       const data = await res.json();
-      if (!data.ok) throw new Error(data.detail || data.error || "load_failed");
+      if (!data.ok) {
+        const err: any = new Error(data.detail || data.error || "load_failed");
+        err.status = res.status;
+        throw err;
+      }
       setProject(data.project);
+      // Home page "Recent" row — localStorage only, see lib/recents.ts.
+      addRecent({
+        id: `vercel-manage:${projectId}`,
+        type: "vercel-manage",
+        label: data.project.name,
+        sublabel: data.project.framework || undefined,
+        href: `/tools/vercel/manage/${projectId}`,
+      });
       await refreshDeployError(data.project.latestDeployment);
     } catch (err: any) {
       setLoadError(String(err?.message || err));
+      // Project gone (deleted) or no longer accessible (403) — this recent
+      // entry is dead, drop it and bounce back to the project picker rather
+      // than leaving the user stuck on a page that can never load.
+      if (err?.status === 404 || err?.status === 403) {
+        removeRecent(`vercel-manage:${projectId}`);
+        router.replace("/tools/vercel/manage");
+      }
     }
   }
 

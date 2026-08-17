@@ -1,6 +1,7 @@
 import Header from "@/components/Header";
 import HomeIntro from "@/components/HomeIntro";
 import ToolGrid from "@/components/ToolGrid";
+import RecentTools from "@/components/RecentTools";
 
 /**
  * Home is just a hub: a grid of tool cards. All upload/push logic lives
@@ -14,6 +15,7 @@ export default function HomePage() {
       <div className="mx-auto max-w-2xl px-4 py-6">
         <HomeIntro />
         <ToolGrid />
+        <RecentTools />
       </div>
     </main>
   );

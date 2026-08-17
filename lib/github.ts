@@ -289,6 +289,16 @@ export async function commitFileChanges(
     throw new Error("No changes selected");
   }
 
+  // Safety net: a caller could in theory hand us both a delete and an
+  // add/replace for the same path — two Tree entries at one path is
+  // ambiguous, GitHub just keeps whichever one it processes last, so if the
+  // delete happens to land after the add/replace, the new content would
+  // silently vanish. Content always wins here; each path keeps only its
+  // final instruction. (The frontend already dedupes before calling this,
+  // this just guards any other caller.)
+  const contentPaths = new Set(changes.filter((c) => c.action === "add" || c.action === "replace").map((c) => c.path));
+  changes = changes.filter((c) => c.action !== "delete" || !contentPaths.has(c.path));
+
   let baseCommitSha: string | null = null;
   let baseTreeSha: string | null = null;
   try {
