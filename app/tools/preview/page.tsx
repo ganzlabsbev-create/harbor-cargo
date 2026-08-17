@@ -63,6 +63,23 @@ export default function PreviewPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [handingOff, setHandingOff] = useState(false);
 
+  // Dev-server mode needs window.crossOriginIsolated === true, which only
+  // gets set when the *document itself* was loaded with COOP/COEP headers
+  // (see next.config.mjs). Since this whole app navigates via next/link
+  // (client-side transitions, no full page load), arriving here from
+  // anywhere else in the app means the browser is still running on
+  // whatever document was hard-loaded first — which never had these
+  // headers. A single forced reload of this URL fixes it: that reload IS
+  // a full navigation, so this route's headers apply. Guarded by
+  // sessionStorage so a genuinely mis-set header doesn't reload forever.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.crossOriginIsolated) return;
+    if (sessionStorage.getItem("harbor-preview-coi-reload")) return;
+    sessionStorage.setItem("harbor-preview-coi-reload", "1");
+    window.location.reload();
+  }, []);
+
   // Deletes the uploaded blob if the user leaves without ever continuing to
   // GitHub — but not once we've kicked off that handoff, since the next
   // page reuses this same blob instead of re-uploading.

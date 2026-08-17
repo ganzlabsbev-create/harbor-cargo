@@ -44,7 +44,20 @@ backend/server ของ Harbor เอง ทุกอย่างยังท�
 - **`lib/static-preview.ts`** — แก้คอมเมนต์เดิมที่บอกว่า "Phase 1 เท่านั้น" ให้ตรงกับความจริง
   (ตอนนี้เป็น fallback ของ Phase 2 แล้ว ไม่ใช่ทางเดียวที่มี)
 
-## ข้อจำกัดที่ควรรู้ก่อนใช้จริง
+## รอบแก้ไขที่ 4 — bugfix: crossOriginIsolated เป็น false ทั้งที่ browser รองรับ
+
+**อาการ:** เข้าเรื่อง Android Chrome (รองรับ WebContainers ชัวร์ๆ) ก็ยังขึ้น "เบราว์เซอร์นี้รัน
+dev server ในตัวไม่ได้" ทุกครั้ง
+
+**สาเหตุ:** `next.config.mjs` ใส่ COOP/COEP header ให้เฉพาะตอนโหลด `/tools/preview` แบบเต็มหน้า
+(hard navigation) แต่แอปนี้เดินหน้าด้วย `next/link` ทั้งแอป (client-side transition) — พอกดเข้ามา
+จากหน้าแรก เบราว์เซอร์ไม่ได้ขอ document ใหม่ ก็เลยไม่ได้ header พวกนี้ `window.crossOriginIsolated`
+เลยเป็น `false` เสมอไม่ว่า browser จะรองรับจริงมั้ย
+
+**แก้:** `app/tools/preview/page.tsx` เพิ่ม `useEffect` เช็คตอน mount ถ้า `crossOriginIsolated`
+ยังเป็น false ให้ `window.location.reload()` ครั้งเดียว (มี guard ผ่าน `sessionStorage` กันลูป) —
+reload คือ full navigation จริง เลยได้ header ครบ
+
 - ต้อง `npm install` (ใส่ dependency ใหม่จริงในเครื่อง Vercel build ไม่ใช่แค่แก้ไฟล์เฉยๆ)
 - iOS Safari บางเวอร์ชันไม่รองรับ `SharedArrayBuffer` → จะ fallback ไป static preview เอง
   โดยไม่ error แต่โปรเจกต์ framework จะ preview จริงไม่ได้บนเบราว์เซอร์นั้น
