@@ -10,7 +10,110 @@
 
 import type { Action, Provider } from "./types";
 
-export const cap = {
+// Explicit shape for both language dicts (P2 build-fix). Previously `CapDict`
+// was derived as `(typeof cap)["th"]`, which — even without `as const` on
+// the object — TypeScript can still infer as a literal-string return type
+// for methods like `resumedAfterLogin` (built from a ternary of two string
+// literals with no return-type annotation). That made `th`'s dict type and
+// `en`'s dict type structurally incompatible despite both being "just
+// strings" at runtime. Pinning every field to a real `interface` up front
+// forces both language objects to widen to plain `string`, so `cap[lang]`
+// (a `th | en` union) is always assignable wherever `CapDict` is expected.
+export type CapLang = "th" | "en";
+
+interface CapStrings {
+  greeting: string;
+  greetingWithContext: (label: string) => string;
+  helpMenu: string;
+  unknownProvider: string;
+  providerComingSoon: (name: string) => string;
+  providerSelected: (name: string) => string;
+  actionCreate: string;
+  actionUpdate: string;
+  cancel: string;
+  backToMenu: string;
+  confirmGo: string;
+  createGo: string;
+  cancelled: string;
+  askZipForUpdate: string;
+  askZipForCreate: string;
+  waitingForFileNudge: string;
+  dropZipHere: string;
+  needLogin: string;
+  loginButton: string;
+  receivedZip: (name: string) => string;
+  checkingRateLimit: string;
+  foundFiles: (n: number) => string;
+  askWhichRepo: string;
+  noReposFound: string;
+  repoNotFound: (name: string) => string;
+  foundRepo: (fullName: string) => string;
+  askRepoName: string;
+  comparing: string;
+  previewIntro: string;
+  previewBranch: (b: string) => string;
+  previewOutro: string;
+  createPreviewOutro: (n: number) => string;
+  executingUpdate: string;
+  executingCreate: string;
+  stepUpload: string;
+  stepUpdateFiles: string;
+  stepRemoveFiles: string;
+  stepCommit: string;
+  stepCreateRepo: string;
+  stepPushFiles: string;
+  doneUpdate: string;
+  doneCreate: string;
+  openRepo: string;
+  doAnother: string;
+  errorGeneric: string;
+  errorTooLarge: string;
+  errorNotZip: string;
+  resumePrompt: string;
+  resumeContinue: string;
+  resumeRestart: string;
+  composerPlaceholder: string;
+  collapsedIdle: string;
+  collapsedPending: string;
+  typeRepoOther: string;
+  sessionExpired: string;
+  rateLimited: (seconds: number) => string;
+  rateLimitedReady: string;
+  resumedAfterLogin: (action: Action) => string;
+  resumedContinueVercel: (action: Action) => string;
+  needVercelLogin: string;
+  connectVercelButton: string;
+  askWhichRepoForVercel: string;
+  askWhichProject: string;
+  noProjectsFound: string;
+  projectNotFound: (name: string) => string;
+  askProjectName: (suggested: string) => string;
+  useSuggestedName: (suggested: string) => string;
+  checkingVercel: string;
+  previewOutroVercel: (repoLabel: string, branch: string, name: string) => string;
+  previewOutroVercelUpdate: (name: string) => string;
+  stepCreateVercelProject: string;
+  stepDeployVercel: string;
+  executingVercelCreate: string;
+  executingVercelUpdate: string;
+  doneVercelCreate: string;
+  doneVercelUpdate: string;
+  openDeployment: string;
+  errorPermissionDenied: string;
+  errorGithubRateLimited: string;
+  errorNetworkOffline: string;
+  errorNotFoundRemote: string;
+  errorConflict: string;
+  errorNameTaken: string;
+  errorServerRemote: string;
+  errorInvalidRepoName: string;
+  errorVercelGithubAppMissing: string;
+  errorVercelNoGitLink: string;
+  errorVercelNoDeployment: string;
+  installVercelAppButton: string;
+}
+
+export const cap: Record<CapLang, CapStrings> = {
   th: {
     greeting: "⚓ Captain Harbor พร้อมแล้ว\nพิมพ์ชื่อบริการที่อยากใช้งาน เช่น \"github\" หรือพิมพ์ \"help\" เพื่อดูเมนู",
     greetingWithContext: (label: string) =>
@@ -220,7 +323,7 @@ export const cap = {
   },
 };
 
-export type CapDict = (typeof cap)["th"];
+export type CapDict = CapStrings;
 
 /**
  * Maps an API error code (from `data.error`, see /api/push, /api/diff,
@@ -264,8 +367,6 @@ export function describeError(s: CapDict, code?: string | null, networkFailed?: 
       return s.errorGeneric;
   }
 }
-
-export type CapLang = keyof typeof cap;
 
 export const PROVIDER_LABEL: Record<Provider, string> = {
   github: "GitHub",

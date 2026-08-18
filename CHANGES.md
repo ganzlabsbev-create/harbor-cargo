@@ -114,3 +114,19 @@ Vercel build fail ที่ type-check step: `CapDict` เดิม infer มา
 TypeScript จะ widen string/function ทุกตัวเป็น `string`/`(...args) => string` ปกติ ทำให้ shape ของ
 `th` กับ `en` ตรงกันแบบ structural แล้ว ไม่กระทบพฤติกรรมตอนรันจริงเลย (ค่าที่ใช้จริงยังเป็นข้อความ
 เดิมทุกตัว แค่ type ที่ TypeScript มองกว้างขึ้น)
+
+### แก้ build error รอบที่ 2 (เจอหลังจากแก้รอบแรก)
+
+รอบแรกลอง "เอา `as const` ออก" — ไม่พอ เพราะ TypeScript ยัง infer return type ของ
+`resumedAfterLogin`/`resumedContinueVercel` เป็น literal string union อยู่ดี (ฟังก์ชันพวกนี้
+return จาก ternary ของ string literal ล้วนๆ โดยไม่มี `: string` กำกับ ก็เลยไม่ widen)
+ทำให้ type ของ `th` กับ `en` ยังชนกันเหมือนเดิม
+
+แก้ใหม่แบบเด็ดขาดกว่าเดิม: ประกาศ `interface CapStrings` ที่ระบุ type ของทุก field ตรงๆ
+(string ธรรมดา หรือ `(...args) => string`) แล้วให้ `cap` ใช้ type นี้ผ่าน
+`Record<CapLang, CapStrings>` ตรงๆ เลย แทนที่จะ infer เอาจาก `typeof cap.th` เหมือนเดิม —
+วิธีนี้บังคับให้ทั้ง `th` และ `en` ต้อง widen เป็น type เดียวกันแน่นอน ไม่ขึ้นกับว่า
+TypeScript จะ infer literal หรือไม่ อีกทั้งยังเช็คด้วยว่าทั้งสองภาษามี key ครบตรงกันทุกตัว
+(เช็คแล้ว 89 key ตรงกันหมดทั้ง interface/th/en)
+
+ไม่กระทบข้อความหรือพฤติกรรมตอนรันจริงเลย เป็นแค่การล็อก type ให้แน่นขึ้น
