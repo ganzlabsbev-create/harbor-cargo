@@ -8,13 +8,13 @@
 /** The four resting positions of the draggable chat panel. See lib/use-drag-panel.ts. */
 export type PanelState = "full" | "half" | "collapsed" | "closed";
 
-/** Providers the command parser recognizes. Only "github" has a working flow today. */
+/** Providers the command parser recognizes. See LIVE_PROVIDERS below for which have a working flow. */
 export type Provider = "github" | "vercel" | "netlify" | "cloudflare";
 
 export const KNOWN_PROVIDERS: Provider[] = ["github", "vercel", "netlify", "cloudflare"];
 
 /** Providers with a real, implemented action flow (matches app/tools/*). Others show "coming soon". */
-export const LIVE_PROVIDERS: Provider[] = ["github"];
+export const LIVE_PROVIDERS: Provider[] = ["github", "vercel"];
 
 export type Action = "create" | "update";
 
@@ -73,7 +73,13 @@ export type Step =
   | "comparing"
   | "await_confirm"
   | "executing"
-  | "done";
+  | "done"
+  // -- vercel-only steps (see runAction()/handleActionInput() branches in
+  // CaptainHarbor.tsx). Vercel deploys straight from the linked GitHub repo,
+  // so its flow never touches blob upload — "await_repo_pick" above is
+  // reused for picking the *source* repo on the create side.
+  | "await_project_name"
+  | "await_project_pick";
 
 export interface ChatState {
   step: Step;
@@ -87,6 +93,10 @@ export interface ChatState {
   repo: string | null;
   branch: string | null;
   preview: DiffPreview | null;
+  /** Vercel-only: id of the existing project picked for an "update" (redeploy). */
+  projectId: string | null;
+  /** Vercel-only: the project name, either typed by the user (create) or read off the picked project (update). */
+  vercelProjectName: string | null;
   /** True once a step has produced state the user would lose by walking away (post-upload, pre-confirm/pre-done). */
   hasUnfinishedWork: boolean;
 }
@@ -103,6 +113,8 @@ export const initialChatState: ChatState = {
   repo: null,
   branch: null,
   preview: null,
+  projectId: null,
+  vercelProjectName: null,
   hasUnfinishedWork: false,
 };
 

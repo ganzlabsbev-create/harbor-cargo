@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.16.0";
+export const APP_VERSION = "0.17.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.17.0",
+    date: "2026-08",
+    notes: [
+      "Captain Harbor: the chat panel is now a proper dialog when full or half height (screen readers announce it correctly), Tab no longer escapes to the page behind it while full-screen, and the message box focuses itself automatically when you open the panel.",
+      "Captain Harbor: you can now drag a ZIP file straight onto the chat while it's waiting for one, instead of only being able to attach it via the paperclip button.",
+      "Captain Harbor: now reports where people drop off in the flow (provider picked, file uploaded, confirmed, push succeeded/failed) so we can see which step loses people.",
+      "Captain Harbor: evened out the chat's tone — a few replies still used a rougher pronoun left over from an earlier draft of the copy; those now match the rest of the widget.",
+    ],
+  },
   {
     version: "0.16.0",
     date: "2026-08",

@@ -63,3 +63,40 @@ reload คือ full navigation จริง เลยได้ header คร�
   โดยไม่ error แต่โปรเจกต์ framework จะ preview จริงไม่ได้บนเบราว์เซอร์นั้น
 - Angular ไม่อยู่ใน dev-command signature list ตรงๆ (ใช้ memory เยอะใน WebContainer) — จะ
   fallback ไปเดา `npm run dev`/`npm run start` จาก `package.json` แทน
+
+---
+
+## รอบแก้ไขที่ 5 — Captain Harbor: P2 (Polish)
+
+ทำตาม P2 ทั้ง 4 ข้อจาก spec ที่ระบุไว้ (ข้อ 12-15) — งาน P0/P1 (กู้ state หลัง OAuth,
+rate-limit countdown, session-expired handling, race-condition guard, provider อื่น,
+persist ข้าม reload, back button, velocity snap, repo filter, error mapping) ทำไปแล้วก่อนหน้านี้
+รอบนี้เป็น polish รอบสุดท้ายก่อนใช้งานจริง
+
+## ไฟล์ที่แก้ / เพิ่ม
+
+- **`lib/use-focus-trap.ts`** (ใหม่) — hook เล็กๆ ที่ดัก Tab/Shift+Tab ให้วนอยู่ใน container
+  ที่กำหนด ใช้เฉพาะตอนพาแนลเป็น `full` เท่านั้น (ตอน `half` ยังเห็นเนื้อหาหน้าเว็บได้อยู่
+  การดัก focus ไว้ตอนนั้นจะแปลกกว่าช่วย)
+
+- **`components/CaptainHarbor.tsx`** — งาน P2 ทั้ง 4 ข้อ:
+  - **ข้อ 12 (Accessibility):** พาแนลได้ `role="dialog"` + `aria-modal` ตอนเป็น `full`/`half`,
+    ใช้ `useFocusTrap` ดัก Tab ตอน `full`, และ auto-focus ช่อง composer ทันทีที่พาแนลเปิดจาก
+    `closed` → `full` (ผ่าน `wasClosedForFocusRef` กันไม่ให้ focus โดนแย่งซ้ำระหว่างที่พาแนล
+    เปิดอยู่แล้ว เช่นตอนลากเปลี่ยนระหว่าง full/half)
+  - **ข้อ 13 (Analytics):** เพิ่ม custom event ผ่าน `@vercel/analytics` (`track`, ห่อด้วย
+    `trackStep()` กัน analytics พังแล้วลาม flow จริง) ที่จุดเปลี่ยน step หลัก:
+    `provider_selected`, `file_uploaded`, `confirmed`, `push_success`, `push_failed`
+    (แยก error ที่ทำให้ push ล้มเหลวด้วย เช่น `session_expired`/`network`/error code จาก API)
+  - **ข้อ 14 (Drag-and-drop ไฟล์):** เพิ่ม `onDragOver`/`onDragLeave`/`onDrop` บนพื้นที่ข้อความ
+    แชท ใช้งานได้เฉพาะตอน step เป็น `await_file` เท่านั้น มี overlay บอก "วางไฟล์ ZIP ตรงนี้ได้เลย"
+    ตอนกำลังลากไฟล์ผ่านมา
+  - **ข้อ 15 (Copy review):** เอาคำว่า "กู" ที่หลงเหลืออยู่ 4 จุด (`askZipForUpdate`,
+    `previewOutro`, `createPreviewOutro`, `previewOutroVercelUpdate`) ออก ให้ตรงกับโทนสุภาพ
+    กลางๆ ที่ข้อความส่วนใหญ่ในไฟล์ใช้อยู่แล้ว — ตัดสินใจเป็นสุภาพกลางทั้งไฟล์ เพราะเป็น
+    tone ส่วนใหญ่ที่ใช้จริงอยู่แล้วก่อนแอปจะเปิดให้คนอื่นใช้งาน
+
+- **`lib/captain-harbor/strings.ts`** — เพิ่ม key `dropZipHere` (th/en) สำหรับ overlay ตอน
+  ข้อ 14 และแก้ 4 บรรทัดตามข้อ 15 ด้านบน
+
+- **`lib/version.ts`** — bump เป็น `0.17.0` พร้อม changelog entry

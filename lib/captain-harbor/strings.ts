@@ -8,7 +8,7 @@
 // here needs to change. The widget only needs `lang` ("th" | "en") from
 // useLang(); the actual copy lives here.
 
-import type { Provider } from "./types";
+import type { Action, Provider } from "./types";
 
 export const cap = {
   th: {
@@ -26,9 +26,10 @@ export const cap = {
     confirmGo: "อัพเดตเลย",
     createGo: "สร้างเลย",
     cancelled: "ยกเลิกแล้วนะ พิมพ์ชื่อบริการใหม่ได้เลยถ้าจะเริ่มอีกรอบ",
-    askZipForUpdate: "โอเค กูพร้อมอัพเดตรีโปให้แล้ว\nส่งไฟล์ ZIP ของโปรเจกต์ที่ต้องการอัพเดตมาได้เลย",
+    askZipForUpdate: "โอเค พร้อมอัพเดตรีโปให้แล้ว\nส่งไฟล์ ZIP ของโปรเจกต์ที่ต้องการอัพเดตมาได้เลย",
     askZipForCreate: "โอเค จะสร้างรีโปใหม่ให้\nส่งไฟล์ ZIP ของโปรเจกต์มาได้เลย",
     waitingForFileNudge: "ตอนนี้กำลังรอไฟล์ ZIP อยู่นะ กดรูปหนีบกระดาษเพื่อแนบไฟล์ หรือพิมพ์ \"ยกเลิก\" ถ้าเปลี่ยนใจ",
+    dropZipHere: "วางไฟล์ ZIP ตรงนี้ได้เลย",
     needLogin: "ต้องล็อกอิน GitHub ก่อนถึงจะใช้งานได้",
     loginButton: "ล็อกอิน GitHub",
     receivedZip: (name: string) => `ได้รับ ${name} แล้ว\nกำลังตรวจสอบไฟล์...`,
@@ -42,8 +43,8 @@ export const cap = {
     comparing: "กำลังเปรียบเทียบไฟล์...",
     previewIntro: "ตรวจเสร็จแล้ว",
     previewBranch: (b: string) => `Branch: ${b}`,
-    previewOutro: "กูจะอัพเดตไฟล์เหล่านี้ไปยัง Repository นี้",
-    createPreviewOutro: (n: number) => `กูจะสร้างรีโปใหม่แล้วใส่ไฟล์ ${n} ไฟล์เข้าไป`,
+    previewOutro: "จะอัพเดตไฟล์เหล่านี้ไปยัง Repository นี้",
+    createPreviewOutro: (n: number) => `จะสร้างรีโปใหม่แล้วใส่ไฟล์ ${n} ไฟล์เข้าไป`,
     executingUpdate: "กำลังอัพเดต...",
     executingCreate: "กำลังสร้างรีโป...",
     stepUpload: "อัพโหลดไฟล์",
@@ -66,6 +67,53 @@ export const cap = {
     collapsedIdle: "แตะเพื่อคุยกับ Captain Harbor",
     collapsedPending: "มีงานค้างรอ confirm อยู่",
     typeRepoOther: "พิมพ์ชื่ออื่น",
+    sessionExpired: "เซสชันหมดอายุแล้ว ต้องล็อกอิน GitHub ใหม่ก่อนนะ",
+    rateLimited: (seconds: number) => `ส่งไฟล์ถี่ไปหน่อย ลองใหม่อีก ${seconds} วินาที`,
+    rateLimitedReady: "ตอนนี้ลองส่งไฟล์ใหม่ได้เลย",
+    resumedAfterLogin: (action: Action) =>
+      action === "update"
+        ? "ล็อกอินเรียบร้อย พร้อมอัพเดตต่อแล้ว ส่งไฟล์มาได้เลย"
+        : "ล็อกอินเรียบร้อย พร้อมสร้างรีโปต่อแล้ว ส่งไฟล์มาได้เลย",
+    resumedContinueVercel: (action: Action) =>
+      action === "update"
+        ? "เชื่อมต่อเรียบร้อย พร้อมอัพเดต deploy ต่อแล้ว"
+        : "เชื่อมต่อเรียบร้อย พร้อมสร้าง Vercel Project ต่อแล้ว",
+
+    // ---- vercel flow (P1 #6) ----
+    needVercelLogin: "ต้องเชื่อมต่อ Vercel ก่อนถึงจะใช้งานได้ (ต่อจาก GitHub ที่ล็อกอินไว้แล้ว)",
+    connectVercelButton: "เชื่อมต่อ Vercel",
+    askWhichRepoForVercel: "จะ deploy รีโปไหนขึ้น Vercel เลือกจากด้านล่าง หรือพิมพ์ชื่อรีโปมาได้เลย (พิมพ์บางส่วนของชื่อเพื่อกรองก็ได้)",
+    askWhichProject: "จะอัพเดต Vercel Project ไหน เลือกจากด้านล่าง หรือพิมพ์ชื่อ project มาได้เลย",
+    noProjectsFound: "ไม่เจอ Vercel Project ในบัญชีนี้เลยนะ ลองสร้างใหม่แทนไหม",
+    projectNotFound: (name: string) => `ไม่เจอ Project ชื่อ "${name}" ลองพิมพ์ใหม่ หรือเลือกจากปุ่มด้านบน`,
+    askProjectName: (suggested: string) =>
+      `ตั้งชื่อ Vercel Project ว่าอะไรดี พิมพ์มาได้เลย (หรือกดใช้ชื่อที่แนะนำ: ${suggested})`,
+    useSuggestedName: (suggested: string) => `ใช้ "${suggested}"`,
+    checkingVercel: "กำลังเชื่อมต่อ Vercel...",
+    previewOutroVercel: (repoLabel: string, branch: string, name: string) =>
+      `จะ deploy จาก ${repoLabel} (branch: ${branch}) ขึ้นเป็น Vercel Project ชื่อ "${name}"`,
+    previewOutroVercelUpdate: (name: string) => `จะสั่ง deploy ล่าสุดจาก Git ให้ Project "${name}"`,
+    stepCreateVercelProject: "สร้าง Vercel Project",
+    stepDeployVercel: "Deploy จาก Git",
+    executingVercelCreate: "กำลังสร้าง Vercel Project...",
+    executingVercelUpdate: "กำลัง deploy ล่าสุดจาก Git...",
+    doneVercelCreate: "สร้าง Vercel Project สำเร็จแล้ว ⚓",
+    doneVercelUpdate: "Deploy สำเร็จแล้ว ⚓",
+    openDeployment: "เปิดดู deployment",
+
+    // ---- error copy, mapped from API error codes (P1 #11) ----
+    errorPermissionDenied: "GitHub ปฏิเสธคำขอนี้ — HARBOR CARGO อาจไม่มีสิทธิ์เข้าถึง repository นี้แล้ว",
+    errorGithubRateLimited: "GitHub จำกัดจำนวนคำขอไว้ชั่วคราว รอสักครู่แล้วลองใหม่นะ",
+    errorNetworkOffline: "เชื่อมต่อเครือข่ายไม่ได้ ลองเช็คอินเทอร์เน็ตแล้วลองใหม่อีกที",
+    errorNotFoundRemote: "ไม่เจอสิ่งนี้แล้ว หรือไม่มีสิทธิ์เข้าถึงอีกต่อไป",
+    errorConflict: "ข้อมูลเปลี่ยนไปแล้วระหว่างที่กำลังทำงานอยู่ ลองใหม่อีกทีนะ",
+    errorNameTaken: "มีชื่อนี้ในบัญชีอยู่แล้ว ลองตั้งชื่ออื่นดู",
+    errorServerRemote: "ฝั่งเซิร์ฟเวอร์ปลายทางกำลังมีปัญหาอยู่ ลองใหม่อีกสักครู่นะ",
+    errorInvalidRepoName: "ชื่อรีโปนี้ใช้ไม่ได้ ลองตั้งชื่ออื่นดู",
+    errorVercelGithubAppMissing: "Vercel ยังไม่มีสิทธิ์เข้าถึงรีโปนี้ ต้องติดตั้ง Vercel GitHub App ก่อน",
+    errorVercelNoGitLink: "Project นี้ไม่ได้ผูกกับ Git repository เลยไม่มี branch ให้ดึงข้อมูลมา",
+    errorVercelNoDeployment: "Project นี้ยังไม่เคย deploy เลย ลอง deploy ใหม่แทน",
+    installVercelAppButton: "ติดตั้ง Vercel GitHub App",
   },
   en: {
     greeting: "⚓ Captain Harbor is ready.\nType a service name, e.g. \"github\", or type \"help\" for the menu.",
@@ -85,6 +133,7 @@ export const cap = {
     askZipForUpdate: "Ready to update a repo.\nSend the ZIP of the project you want to update.",
     askZipForCreate: "Ready to create a new repo.\nSend the ZIP of the project.",
     waitingForFileNudge: "Still waiting on a ZIP — tap the paperclip to attach one, or type \"cancel\" to stop.",
+    dropZipHere: "Drop the ZIP file here",
     needLogin: "You need to log in with GitHub first.",
     loginButton: "Log in with GitHub",
     receivedZip: (name: string) => `Got ${name}.\nChecking the file...`,
@@ -122,8 +171,99 @@ export const cap = {
     collapsedIdle: "Tap to talk to Captain Harbor",
     collapsedPending: "Work pending confirmation",
     typeRepoOther: "Type another",
+    sessionExpired: "Your session expired. Please log in with GitHub again.",
+    rateLimited: (seconds: number) => `Too many uploads — try again in ${seconds}s.`,
+    rateLimitedReady: "You can try uploading again now.",
+    resumedAfterLogin: (action: Action) =>
+      action === "update"
+        ? "Logged in — ready to continue the update. Send the ZIP whenever you're ready."
+        : "Logged in — ready to continue creating the repo. Send the ZIP whenever you're ready.",
+    resumedContinueVercel: (action: Action) =>
+      action === "update"
+        ? "Connected — ready to continue the deploy."
+        : "Connected — ready to continue creating the Vercel project.",
+
+    // ---- vercel flow (P1 #6) ----
+    needVercelLogin: "You need to connect Vercel first (on top of the GitHub login you already have).",
+    connectVercelButton: "Connect Vercel",
+    askWhichRepoForVercel: "Which repo should deploy to Vercel? Pick below, or type a repo name (typing part of the name filters the list).",
+    askWhichProject: "Which Vercel project should this update? Pick below, or type a project name.",
+    noProjectsFound: "No Vercel projects found on this account — want to create one instead?",
+    projectNotFound: (name: string) => `Couldn't find a project named "${name}". Try again or pick one above.`,
+    askProjectName: (suggested: string) => `What should the Vercel project be called? (or tap to use the suggested name: ${suggested})`,
+    useSuggestedName: (suggested: string) => `Use "${suggested}"`,
+    checkingVercel: "Connecting to Vercel...",
+    previewOutroVercel: (repoLabel: string, branch: string, name: string) =>
+      `I'll deploy from ${repoLabel} (branch: ${branch}) as a new Vercel project named "${name}".`,
+    previewOutroVercelUpdate: (name: string) => `I'll trigger a fresh deploy from Git for project "${name}".`,
+    stepCreateVercelProject: "Create Vercel project",
+    stepDeployVercel: "Deploy from Git",
+    executingVercelCreate: "Creating Vercel project...",
+    executingVercelUpdate: "Deploying latest from Git...",
+    doneVercelCreate: "Vercel project created successfully. ⚓",
+    doneVercelUpdate: "Deployed successfully. ⚓",
+    openDeployment: "Open deployment",
+
+    // ---- error copy, mapped from API error codes (P1 #11) ----
+    errorPermissionDenied: "GitHub denied this action — HARBOR CARGO may no longer have access to this repository.",
+    errorGithubRateLimited: "GitHub's rate limit was reached. Give it a minute and try again.",
+    errorNetworkOffline: "Couldn't reach the network. Check your connection and try again.",
+    errorNotFoundRemote: "That can't be found anymore, or you no longer have access to it.",
+    errorConflict: "Things changed on the other end while this was in progress. Try again.",
+    errorNameTaken: "That name is already taken on this account — try another one.",
+    errorServerRemote: "The remote service is having issues right now. Try again shortly.",
+    errorInvalidRepoName: "That repo name isn't valid — try another one.",
+    errorVercelGithubAppMissing: "Vercel doesn't have access to this repo yet — the Vercel GitHub App needs to be installed first.",
+    errorVercelNoGitLink: "This project isn't linked to a Git repository, so there's no branch to pull from.",
+    errorVercelNoDeployment: "This project has no deployments yet — try deploying it instead.",
+    installVercelAppButton: "Install Vercel GitHub App",
   },
 } as const;
+
+export type CapDict = (typeof cap)["th"];
+
+/**
+ * Maps an API error code (from `data.error`, see /api/push, /api/diff,
+ * /api/vercel/*) to a specific, actionable message — instead of the
+ * catch-all `errorGeneric`. `networkFailed` should be true when the fetch
+ * itself threw (offline, DNS, CORS) rather than returning a JSON error
+ * body, since that's a different problem with a different fix.
+ */
+export function describeError(s: CapDict, code?: string | null, networkFailed?: boolean): string {
+  if (networkFailed) return s.errorNetworkOffline;
+  switch (code) {
+    case "github_auth_expired":
+      return s.sessionExpired;
+    case "github_rate_limited":
+      return s.errorGithubRateLimited;
+    case "github_forbidden":
+      return s.errorPermissionDenied;
+    case "github_not_found":
+      return s.errorNotFoundRemote;
+    case "github_conflict":
+      return s.errorConflict;
+    case "github_name_taken":
+      return s.errorNameTaken;
+    case "github_server_error":
+      return s.errorServerRemote;
+    case "invalid_zip":
+      return s.errorNotZip;
+    case "file_too_large":
+      return s.errorTooLarge;
+    case "invalid_repo_name":
+      return s.errorInvalidRepoName;
+    case "vercel_not_connected":
+      return s.needVercelLogin;
+    case "github_app_not_installed":
+      return s.errorVercelGithubAppMissing;
+    case "no_git_link":
+      return s.errorVercelNoGitLink;
+    case "no_deployment":
+      return s.errorVercelNoDeployment;
+    default:
+      return s.errorGeneric;
+  }
+}
 
 export type CapLang = keyof typeof cap;
 

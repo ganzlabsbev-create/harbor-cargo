@@ -20,20 +20,29 @@
 //     nothing about auth, blob storage, or the diff/push semantics is
 //     reinvented here.
 //
-// Only "github" has a working flow today; other providers show a
+// "github" and "vercel" have working flows; netlify/cloudflare still show a
 // "coming soon" message per the plan (new ones can be wired in later by
 // extending LIVE_PROVIDERS in lib/captain-harbor/types.ts and adding a
-// branch to runAction()/handleFile() below).
+// branch to handleActionInput()/handleRepoPick()/handleConfirm() below).
+//
+// Vercel's flow deliberately looks different from GitHub's under the hood:
+// it deploys straight from the linked GitHub repo (git-based deploys), so
+// there's no ZIP/blob step at all — "target" resolves to a repo (create) or
+// an existing Vercel project (update) instead of a repo + diff.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { usePathname } from "next/navigation";
 import { upload } from "@vercel/blob/client";
 import { nanoid } from "nanoid";
+import { track } from "@vercel/analytics";
 import { Anchor, X, Paperclip, Send, Check, Loader2, ExternalLink } from "lucide-react";
 import { useLang } from "@/lib/i18n-context";
 import { useDragPanel } from "@/lib/use-drag-panel";
+import { useCountdown } from "@/lib/use-elapsed";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import {
   cap,
+  describeError,
   PROVIDER_LABEL,
   parseProvider,
   isCancelWord,
@@ -43,13 +52,124 @@ import {
   KNOWN_PROVIDERS,
   LIVE_PROVIDERS,
   initialChatState,
+  type Action,
   type ChatMessage,
   type ChatState,
   type Provider,
   type QuickReply,
+  type Step,
 } from "@/lib/captain-harbor/types";
 
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
+
+/** Custom drop-off funnel events (P2 #13) — provider_selected -> file_uploaded
+ *  -> confirmed -> push_success/push_failed. Wrapped so a blocked analytics
+ *  script (ad-blockers, etc.) can never break the actual flow. */
+function trackStep(name: string, props?: Record<string, string | number | boolean>) {
+  try {
+    track(name, props);
+  } catch {
+    // analytics is best-effort — never let it interrupt the flow
+  }
+}
+
+/** Vercel project names only allow lowercase letters, digits, and dashes. */
+function sanitizeProjectName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 100);
+}
+
+/** Only `{ provider, action }` — never blobUrl/blobPathname, which may have
+ *  expired or been deleted by the time the user comes back. */
+const RESUME_KEY = "captain-harbor-resume";
+
+type ResumeState = { provider: Provider; action: Action };
+
+function readResumeState(): ResumeState | null {
+  try {
+    const raw = sessionStorage.getItem(RESUME_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(RESUME_KEY);
+    const parsed = JSON.parse(raw);
+    if (!parsed?.provider || !parsed?.action) return null;
+    return parsed as ResumeState;
+  } catch {
+    return null;
+  }
+}
+
+function writeResumeState(state: ResumeState) {
+  try {
+    sessionStorage.setItem(RESUME_KEY, JSON.stringify(state));
+  } catch {
+    // sessionStorage unavailable (private mode, etc) — the OAuth redirect
+    // still works, just without state resume on return.
+  }
+}
+
+/** Full page reload / new tab persistence (P1 #7) — survives an actual F5,
+ *  unlike the sessionStorage resume above which only covers the OAuth
+ *  round trip. Deliberately narrow: never blobUrl/blobPathname (may be
+ *  gone by the time the user comes back), and never `preview`/projectId
+ *  (large / can go stale) — just enough to recognize "there was unfinished
+ *  work" and re-enter the flow at a safe point. */
+const PERSIST_KEY = "captain-harbor-state-v1";
+
+interface PersistedState {
+  step: Step;
+  provider: Provider | null;
+  action: Action | null;
+  owner: string | null;
+  repo: string | null;
+  fileName: string | null;
+  fileCount: number | null;
+}
+
+function readPersistedState(): PersistedState | null {
+  try {
+    const raw = localStorage.getItem(PERSIST_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.step || parsed.step === "idle" || parsed.step === "done") return null;
+    if (!parsed?.provider || !LIVE_PROVIDERS.includes(parsed.provider)) return null;
+    return parsed as PersistedState;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedState(chat: ChatState) {
+  try {
+    if (chat.step === "idle" || chat.step === "done") {
+      localStorage.removeItem(PERSIST_KEY);
+      return;
+    }
+    const persisted: PersistedState = {
+      step: chat.step,
+      provider: chat.provider,
+      action: chat.action,
+      owner: chat.owner,
+      repo: chat.repo,
+      fileName: chat.fileName,
+      fileCount: chat.fileCount,
+    };
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(persisted));
+  } catch {
+    // localStorage unavailable — resume-after-reload just won't be offered.
+  }
+}
+
+function clearPersistedState() {
+  try {
+    localStorage.removeItem(PERSIST_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 /** /tools/github -> "github", /tools/vercel -> "vercel", everything else -> null. */
 function providerFromPath(path: string): Provider | null {
@@ -69,8 +189,37 @@ export default function CaptainHarbor() {
   const [chat, setChat] = useState<ChatState>(initialChatState);
   const [input, setInput] = useState("");
   const [greeted, setGreeted] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
+  const [rateLimitMsgId, setRateLimitMsgId] = useState<string | null>(null);
+  const [rateLimitSeconds, setRateLimitSeconds] = useState<number | null>(null);
+  const rateLimitRemaining = useCountdown(rateLimitSeconds);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Accessibility (P2 #12): container for the Tab-cycling focus trap, the
+  // composer input to auto-focus when the panel opens from closed, and a
+  // flag so the auto-focus effect only fires on a real closed->full
+  // transition (not on every "full" re-render, e.g. after a drag snap).
+  const panelRef = useRef<HTMLDivElement>(null);
+  const composerInputRef = useRef<HTMLInputElement>(null);
+  const wasClosedForFocusRef = useRef(true);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  // Synchronous guard against double-fire (e.g. a fast double-tap on a
+  // quick-reply button) that setIsBusy(true) can't catch in time, since
+  // the state update isn't visible until the next render.
+  const isBusyRef = useRef(false);
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+
+  // Full repo/project lists fetched once per pick step, so typing a filter
+  // (P1 #10) never needs another round-trip — see goToRepoPick()/
+  // goToProjectPick() and the filter effect below.
+  const reposCacheRef = useRef<any[]>([]);
+  const projectsCacheRef = useRef<any[]>([]);
+  const repoPickMsgIdRef = useRef<string | null>(null);
+  const projectPickMsgIdRef = useRef<string | null>(null);
+  // A page-reload resume snapshot (P1 #7), read once on mount and shown the
+  // next time the panel opens rather than popping it open unprompted.
+  const pendingReloadResumeRef = useRef<PersistedState | null>(null);
 
   const pageProvider = useMemo(() => providerFromPath(pathname || ""), [pathname]);
 
@@ -92,12 +241,146 @@ export default function CaptainHarbor() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  // Focus trap only while full-screen (P2 #12) — "half" still leaves page
+  // content visibly reachable, so trapping focus there would be surprising
+  // rather than helpful; see lib/use-focus-trap.ts.
+  useFocusTrap(drag.panelState === "full", panelRef);
+
+  // Auto-focus the composer the moment the panel opens from fully closed
+  // (P2 #12) — but not on every re-render while it's already open (e.g.
+  // dragging between full/half), which would rudely steal focus back from
+  // whatever the user was doing (like typing).
+  useEffect(() => {
+    const wasClosed = wasClosedForFocusRef.current;
+    wasClosedForFocusRef.current = drag.panelState === "closed";
+    if (wasClosed && drag.panelState === "full") {
+      // Wait a tick for the panel's open transition/render to land first.
+      const id = window.setTimeout(() => composerInputRef.current?.focus(), 50);
+      return () => window.clearTimeout(id);
+    }
+  }, [drag.panelState]);
+
+  function setBusy(value: boolean) {
+    isBusyRef.current = value;
+    setIsBusy(value);
+  }
+
+  // Live countdown for a rate-limited upload (see handleFile) — ticks the
+  // pending message's text down to 0 instead of leaving a static error.
+  useEffect(() => {
+    if (!rateLimitMsgId || rateLimitRemaining === null) return;
+    if (rateLimitRemaining > 0) {
+      updateMsg(rateLimitMsgId, { text: s.rateLimited(rateLimitRemaining), pending: false });
+    } else {
+      updateMsg(rateLimitMsgId, { text: s.rateLimitedReady, pending: false });
+      setRateLimitMsgId(null);
+      setRateLimitSeconds(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rateLimitRemaining, rateLimitMsgId]);
+
+  // Live repo/project filter (P1 #10) — as the user types on the repo-pick
+  // or project-pick step, narrow the quick-reply buttons to matches instead
+  // of always showing just the first page. Filters the list already fetched
+  // by goToRepoPick()/goToProjectPick() (reposCacheRef/projectsCacheRef), so
+  // this never triggers another request — it's a pure client-side substring
+  // match against a small in-memory list.
+  useEffect(() => {
+    const query = input.trim().toLowerCase();
+    if (chat.step === "await_repo_pick" && repoPickMsgIdRef.current) {
+      const all = reposCacheRef.current;
+      const filtered = query
+        ? all.filter((r: any) => r.full_name.toLowerCase().includes(query) || r.name.toLowerCase().includes(query))
+        : all;
+      updateMsg(repoPickMsgIdRef.current, { quickReplies: repoQuickReplies(filtered) });
+    } else if (chat.step === "await_project_pick" && projectPickMsgIdRef.current) {
+      const all = projectsCacheRef.current;
+      const filtered = query ? all.filter((p: any) => p.name.toLowerCase().includes(query)) : all;
+      updateMsg(projectPickMsgIdRef.current, { quickReplies: projectQuickReplies(filtered) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, chat.step]);
+
+  // Resume state that survived a GitHub/Vercel OAuth redirect (see the
+  // `__login__`/`__login_vercel__` handlers in dispatch(), which stash
+  // { provider, action } into sessionStorage right before leaving the app).
+  // Runs once on mount, before the "greet" effect below — skips
+  // provider/action selection entirely and drops the user straight back
+  // into the flow. Where that lands differs by provider: GitHub's flow
+  // needs a freshly-uploaded ZIP (any blobUrl from before the redirect may
+  // have expired, and was never persisted), so it always goes to
+  // `await_file`. Vercel's flow never uploads a ZIP at all — it deploys
+  // straight from the linked GitHub repo — so there's no file step to
+  // resume into; it goes straight to picking the target (repo for create,
+  // existing project for update) instead.
+  useEffect(() => {
+    const resume = readResumeState();
+    if (!resume || !LIVE_PROVIDERS.includes(resume.provider)) return;
+    setGreeted(true);
+    drag.open("full");
+
+    if (resume.provider === "github") {
+      setChat((c) => ({
+        ...c,
+        provider: resume.provider,
+        action: resume.action,
+        step: "await_file",
+        hasUnfinishedWork: true,
+      }));
+      addMsg({ role: "bot", text: s.resumedAfterLogin(resume.action) });
+      return;
+    }
+
+    // vercel
+    setChat((c) => ({ ...c, provider: resume.provider, action: resume.action, hasUnfinishedWork: true }));
+    addMsg({ role: "bot", text: s.resumedContinueVercel(resume.action) });
+    if (resume.action === "create") void goToRepoPick();
+    else void goToProjectPick();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist a snapshot of `chat` on every change, so a real page reload
+  // (F5, closed tab) doesn't lose track of unfinished work entirely (P1 #7)
+  // — see readPersistedState()/writePersistedState() above.
+  useEffect(() => {
+    writePersistedState(chat);
+  }, [chat]);
+
+  // Read back a page-reload snapshot once on mount. Doesn't touch `chat` or
+  // pop the panel open by itself — that would be a jarring surprise right
+  // after a refresh — it just stashes the snapshot and the next "panel
+  // opened" greet (below) offers it as a resume card instead of the normal
+  // greeting. The sessionStorage OAuth-resume effect above takes priority
+  // when both exist, since it's the more time-sensitive of the two.
+  useEffect(() => {
+    const persisted = readPersistedState();
+    if (persisted) pendingReloadResumeRef.current = persisted;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Greet once, the first time the panel is opened — and if the user
   // opened it from a page that implies a provider (e.g. /tools/github),
   // offer that as a shortcut instead of asking from scratch.
   useEffect(() => {
     if (drag.panelState === "closed" || greeted) return;
     setGreeted(true);
+
+    const reloadResume = pendingReloadResumeRef.current;
+    if (reloadResume) {
+      // Don't consume it yet — __resume_continue__/__resume_restart__ in
+      // dispatch() read it again. Just offer the choice (P1 #7).
+      addMsg({
+        role: "bot",
+        text: s.resumePrompt,
+        quickReplies: [
+          { label: s.resumeContinue, value: "__resume_continue__", tone: "primary" },
+          { label: s.resumeRestart, value: "__resume_restart__", tone: "ghost" },
+        ],
+      });
+      setChat((c) => ({ ...c, hasUnfinishedWork: true }));
+      return;
+    }
+
     if (pageProvider && LIVE_PROVIDERS.includes(pageProvider)) {
       addMsg({
         role: "bot",
@@ -129,9 +412,42 @@ export default function CaptainHarbor() {
   }
 
   function resetToIdle(sayCancelled: boolean) {
+    clearPersistedState();
     setChat(initialChatState);
     if (sayCancelled) addMsg({ role: "bot", text: s.cancelled });
     showProviderMenu();
+  }
+
+  /** Handles "__resume_continue__" from the page-reload resume card (P1 #7).
+   *  Never trusts persisted step data blindly — blobUrl/blobPathname (github)
+   *  and projectId/vercelProjectName (vercel) were never persisted, since
+   *  they can go stale between visits, so any step that depended on one of
+   *  those re-runs the cheapest step that can rebuild it instead of resuming
+   *  into a broken diff/push. */
+  function resumeAfterReload() {
+    const persisted = pendingReloadResumeRef.current;
+    pendingReloadResumeRef.current = null;
+    if (!persisted?.provider || !persisted.action) {
+      resetToIdle(false);
+      return;
+    }
+    const { provider, action } = persisted;
+
+    if (provider === "github") {
+      // Every github step past "await_file" needs the uploaded ZIP's blob,
+      // which was never persisted — so there's really only one safe place
+      // to resume: ask for the file again.
+      setChat({ ...initialChatState, provider, action, step: "await_file", hasUnfinishedWork: true });
+      addMsg({ role: "bot", text: s.resumedAfterLogin(action) });
+      return;
+    }
+
+    // Vercel: no blob dependency, but the picked target (projectId /
+    // vercelProjectName) wasn't persisted either — re-run target picking.
+    setChat({ ...initialChatState, provider, action, owner: persisted.owner, repo: persisted.repo, hasUnfinishedWork: true });
+    addMsg({ role: "bot", text: s.resumedContinueVercel(action) });
+    if (action === "create") void goToRepoPick();
+    else void goToProjectPick();
   }
 
   // ---- provider / action selection ------------------------------------
@@ -149,6 +465,7 @@ export default function CaptainHarbor() {
       showProviderMenu();
       return;
     }
+    trackStep("provider_selected", { provider });
     setChat((c) => ({ ...c, provider, step: "await_action" }));
     const id = addMsg({
       role: "bot",
@@ -156,7 +473,7 @@ export default function CaptainHarbor() {
       quickReplies: [
         { label: s.actionCreate, value: "create", tone: "primary" },
         { label: s.actionUpdate, value: "update", tone: "primary" },
-        { label: s.cancel, value: "cancel", tone: "ghost" },
+        { label: s.cancel, value: "__cancel_flow__", tone: "ghost" },
       ],
     });
     void id;
@@ -173,6 +490,8 @@ export default function CaptainHarbor() {
       return;
     }
 
+    // GitHub login is the base session for every provider here (repo
+    // listing, and even Vercel's create flow, both go through it).
     const authed = await checkAuth();
     if (!authed) {
       addMsg({
@@ -180,6 +499,26 @@ export default function CaptainHarbor() {
         text: s.needLogin,
         quickReplies: [{ label: s.loginButton, value: "__login__", tone: "primary" }],
       });
+      return;
+    }
+
+    if (chatRef.current.provider === "vercel") {
+      const vercelConnected = await checkVercelConnected();
+      if (!vercelConnected) {
+        setChat((c) => ({ ...c, action, hasUnfinishedWork: true }));
+        addMsg({
+          role: "bot",
+          text: s.needVercelLogin,
+          quickReplies: [{ label: s.connectVercelButton, value: "__login_vercel__", tone: "primary" }],
+        });
+        return;
+      }
+      setChat((c) => ({ ...c, action, hasUnfinishedWork: true }));
+      if (action === "create") {
+        await goToRepoPick();
+      } else {
+        await goToProjectPick();
+      }
       return;
     }
 
@@ -196,6 +535,39 @@ export default function CaptainHarbor() {
     }
   }
 
+  /** Whether the current session already has a Vercel connection (separate
+   *  from the base GitHub login above — see /api/vercel/status). */
+  async function checkVercelConnected(): Promise<boolean> {
+    try {
+      const res = await fetch("/api/vercel/status");
+      if (!res.ok) return false;
+      const data = await res.json();
+      return Boolean(data.ok && data.connected);
+    } catch {
+      return false;
+    }
+  }
+
+  /** True if a fetch response is the "session expired mid-flow" case (401 /
+   *  `not_authenticated`), as opposed to a generic failure. */
+  function isSessionExpired(status: number, data: any): boolean {
+    return status === 401 || data?.error === "not_authenticated";
+  }
+
+  /** Shows a specific "you were logged out" message + a login button,
+   *  instead of the generic error copy. Reuses `pendingId` if given so it
+   *  replaces an in-flight "checking..." bubble rather than adding a new one. */
+  function showSessionExpired(pendingId?: string) {
+    const patch = {
+      text: s.sessionExpired,
+      pending: false,
+      steps: undefined,
+      quickReplies: [{ label: s.loginButton, value: "__login__", tone: "primary" as const }],
+    };
+    if (pendingId) updateMsg(pendingId, patch);
+    else addMsg({ role: "bot", ...patch });
+  }
+
   // ---- file upload -------------------------------------------------------
 
   function openFilePicker() {
@@ -203,6 +575,8 @@ export default function CaptainHarbor() {
   }
 
   async function handleFile(file: File) {
+    if (isBusyRef.current) return;
+
     if (!file.name.toLowerCase().endsWith(".zip")) {
       addMsg({ role: "bot", text: s.errorNotZip });
       return;
@@ -214,6 +588,7 @@ export default function CaptainHarbor() {
 
     addMsg({ role: "user", text: `📎 ${file.name}` });
     const pendingId = addMsg({ role: "bot", text: s.receivedZip(file.name), pending: true });
+    setBusy(true);
 
     try {
       // Mirrors components/UploadZone.tsx: rate-limit check -> direct-to-blob
@@ -226,7 +601,18 @@ export default function CaptainHarbor() {
       });
       const rateLimitData = await rateLimitRes.json();
       if (!rateLimitData.ok) {
-        updateMsg(pendingId, { text: s.errorGeneric, pending: false });
+        if (isSessionExpired(rateLimitRes.status, rateLimitData)) {
+          showSessionExpired(pendingId);
+          return;
+        }
+        if (rateLimitData.error === "rate_limited" && typeof rateLimitData.retryAfterSeconds === "number") {
+          // Live countdown instead of a static error — see the effect above
+          // watching `rateLimitRemaining`. Re-enables itself at 0.
+          setRateLimitMsgId(pendingId);
+          setRateLimitSeconds(rateLimitData.retryAfterSeconds);
+          return;
+        }
+        updateMsg(pendingId, { text: describeError(s, rateLimitData.error), pending: false });
         return;
       }
 
@@ -243,10 +629,15 @@ export default function CaptainHarbor() {
       });
       const data = await res.json();
       if (!data.ok) {
-        updateMsg(pendingId, { text: data.error === "invalid_zip" ? s.errorNotZip : s.errorGeneric, pending: false });
+        if (isSessionExpired(res.status, data)) {
+          showSessionExpired(pendingId);
+          return;
+        }
+        updateMsg(pendingId, { text: describeError(s, data.error), pending: false });
         return;
       }
 
+      trackStep("file_uploaded", { provider: chatRef.current.provider || "unknown", fileCount: data.fileCount });
       updateMsg(pendingId, { text: s.foundFiles(data.fileCount), pending: false });
       setChat((c) => ({
         ...c,
@@ -256,14 +647,16 @@ export default function CaptainHarbor() {
         fileCount: data.fileCount,
       }));
 
-      if (chat.action === "create") {
+      if (chatRef.current.action === "create") {
         setChat((c) => ({ ...c, step: "await_repo_name" }));
         addMsg({ role: "bot", text: s.askRepoName });
       } else {
         await goToRepoPick();
       }
     } catch {
-      updateMsg(pendingId, { text: s.errorGeneric, pending: false });
+      updateMsg(pendingId, { text: describeError(s, null, true), pending: false });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -271,6 +664,7 @@ export default function CaptainHarbor() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    if (isBusy) return;
     if (chat.step !== "await_file") {
       addMsg({ role: "bot", text: s.waitingForFileNudge });
       return;
@@ -278,70 +672,141 @@ export default function CaptainHarbor() {
     void handleFile(file);
   }
 
-  // ---- repo resolution (update flow) -------------------------------------
+  // ---- drag-and-drop straight into the chat (P2 #14) ---------------------
+  // Desktop/web only in practice (touch devices don't fire these), and only
+  // while a ZIP is actually expected — dragging a file over the chat during
+  // any other step (e.g. while typing a repo name) shouldn't do anything.
+
+  function onChatDragOver(e: DragEvent<HTMLDivElement>) {
+    if (chat.step !== "await_file" || isBusy) return;
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    setIsDraggingFile(true);
+  }
+
+  function onChatDragLeave(e: DragEvent<HTMLDivElement>) {
+    // Only clear when actually leaving the container, not when moving
+    // between its children (which also fires dragleave on the child).
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setIsDraggingFile(false);
+  }
+
+  function onChatDrop(e: DragEvent<HTMLDivElement>) {
+    setIsDraggingFile(false);
+    if (chat.step !== "await_file" || isBusy) return;
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    void handleFile(file);
+  }
+
+  // ---- repo resolution (github update flow + vercel create flow) --------
+
+  /** Builds the (up to 8) quick-reply buttons for the repo-pick message —
+   *  shared by the initial fetch and the live filter effect below (P1 #10). */
+  function repoQuickReplies(repos: any[]) {
+    return [
+      ...repos.slice(0, 8).map((r: any) => ({ label: r.full_name, value: r.full_name, tone: "primary" as const })),
+      { label: s.cancel, value: "__cancel_flow__", tone: "ghost" as const },
+    ];
+  }
 
   async function goToRepoPick() {
     setChat((c) => ({ ...c, step: "await_repo_pick" }));
     const pendingId = addMsg({ role: "bot", text: s.checkingRateLimit, pending: true });
+    setBusy(true);
     try {
       const res = await fetch("/api/repos");
       const data = await res.json();
-      if (!data.ok || !Array.isArray(data.repos) || data.repos.length === 0) {
+      if (!data.ok) {
+        if (isSessionExpired(res.status, data)) {
+          showSessionExpired(pendingId);
+          return;
+        }
+        updateMsg(pendingId, { text: describeError(s, data.error), pending: false });
+        return;
+      }
+      if (!Array.isArray(data.repos) || data.repos.length === 0) {
         updateMsg(pendingId, { text: s.noReposFound, pending: false });
         return;
       }
-      const top = data.repos.slice(0, 6);
+      reposCacheRef.current = data.repos;
+      repoPickMsgIdRef.current = pendingId;
+      const isVercel = chatRef.current.provider === "vercel";
       updateMsg(pendingId, {
-        text: s.askWhichRepo,
+        text: isVercel ? s.askWhichRepoForVercel : s.askWhichRepo,
         pending: false,
-        quickReplies: [
-          ...top.map((r: any) => ({ label: r.full_name, value: r.full_name, tone: "primary" as const })),
-          { label: s.cancel, value: "cancel", tone: "ghost" as const },
-        ],
+        quickReplies: repoQuickReplies(data.repos),
       });
     } catch {
-      updateMsg(pendingId, { text: s.errorGeneric, pending: false });
+      updateMsg(pendingId, { text: describeError(s, null, true), pending: false });
+    } finally {
+      setBusy(false);
     }
   }
 
   async function handleRepoPick(raw: string, sourceMsgId?: string) {
+    if (isBusyRef.current) return;
     if (sourceMsgId) resolveReplies(sourceMsgId);
     const fullName = raw.trim();
-    const [owner, repo] = fullName.includes("/") ? fullName.split("/") : [null, fullName];
-    if (!owner || !repo) {
+
+    // Resolved from the cached list fetched by goToRepoPick() — no need to
+    // hit /api/repos again, the data's already in hand (P1 #10).
+    const match = reposCacheRef.current.find(
+      (r: any) =>
+        r.full_name.toLowerCase() === fullName.toLowerCase() ||
+        r.name.toLowerCase() === fullName.toLowerCase()
+    );
+    if (!match) {
       addMsg({ role: "bot", text: s.repoNotFound(fullName) });
       return;
     }
 
+    const [owner, repo] = match.full_name.split("/");
+    const branch = match.default_branch || "main";
+    repoPickMsgIdRef.current = null;
+
+    if (chatRef.current.provider === "vercel") {
+      addMsg({ role: "bot", text: s.foundRepo(match.full_name) });
+      setChat((c) => ({ ...c, owner, repo, branch, step: "await_project_name" }));
+      const suggested = sanitizeProjectName(repo);
+      addMsg({
+        role: "bot",
+        text: s.askProjectName(suggested),
+        quickReplies: [
+          { label: s.useSuggestedName(suggested), value: suggested, tone: "primary" },
+          { label: s.cancel, value: "__cancel_flow__", tone: "ghost" },
+        ],
+      });
+      return;
+    }
+
     setChat((c) => ({ ...c, owner, repo }));
-    const pendingId = addMsg({ role: "bot", text: s.checkingRateLimit, pending: true });
+    const pendingId = addMsg({ role: "bot", text: s.foundRepo(match.full_name), pending: true });
+    setBusy(true);
     try {
-      const reposRes = await fetch("/api/repos");
-      const reposData = await reposRes.json();
-      const match = (reposData.repos || []).find((r: any) => r.full_name.toLowerCase() === fullName.toLowerCase());
-      if (!match) {
-        updateMsg(pendingId, { text: s.repoNotFound(fullName), pending: false });
-        return;
-      }
-      const branch = match.default_branch || "main";
-      updateMsg(pendingId, { text: s.foundRepo(fullName), pending: false });
       setChat((c) => ({ ...c, branch, step: "comparing" }));
-      await runDiff(owner, repo, branch);
-    } catch {
-      updateMsg(pendingId, { text: s.errorGeneric, pending: false });
+      await runDiff(owner, repo, branch, pendingId);
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function runDiff(owner: string, repo: string, branch: string) {
+  async function runDiff(owner: string, repo: string, branch: string, pendingId?: string) {
     try {
       const res = await fetch("/api/diff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blobUrl: chat.blobUrl, blobPathname: chat.blobPathname, owner, repo, branch }),
+        body: JSON.stringify({ blobUrl: chatRef.current.blobUrl, blobPathname: chatRef.current.blobPathname, owner, repo, branch }),
       });
       const data = await res.json();
       if (!data.ok) {
-        addMsg({ role: "bot", text: s.errorGeneric });
+        if (isSessionExpired(res.status, data)) {
+          showSessionExpired(pendingId);
+          return;
+        }
+        if (pendingId) updateMsg(pendingId, { text: describeError(s, data.error), pending: false });
+        else addMsg({ role: "bot", text: describeError(s, data.error) });
         return;
       }
       const preview = {
@@ -352,19 +817,107 @@ export default function CaptainHarbor() {
         owner,
         repo,
       };
+      if (pendingId) updateMsg(pendingId, { pending: false });
       setChat((c) => ({ ...c, preview, step: "await_confirm" }));
       addMsg({
         role: "bot",
         text: `${s.previewIntro}\n🟢 +${preview.added.length}  🟡 ~${preview.modified.length}  🔴 -${preview.removed.length}\n${s.previewBranch(branch)}\n${s.previewOutro}`,
         preview,
         quickReplies: [
-          { label: s.confirmGo, value: "confirm", tone: "primary" },
-          { label: s.cancel, value: "cancel", tone: "ghost" },
+          { label: s.confirmGo, value: "__confirm_push__", tone: "primary" },
+          { label: s.cancel, value: "__cancel_flow__", tone: "ghost" },
         ],
       });
     } catch {
-      addMsg({ role: "bot", text: s.errorGeneric });
+      const text = describeError(s, null, true);
+      if (pendingId) updateMsg(pendingId, { text, pending: false });
+      else addMsg({ role: "bot", text });
     }
+  }
+
+  // ---- vercel project resolution (update flow = redeploy) ----------------
+
+  function projectQuickReplies(projects: any[]) {
+    return [
+      ...projects.slice(0, 8).map((p: any) => ({ label: p.name, value: p.name, tone: "primary" as const })),
+      { label: s.cancel, value: "__cancel_flow__", tone: "ghost" as const },
+    ];
+  }
+
+  async function goToProjectPick() {
+    setChat((c) => ({ ...c, step: "await_project_pick" }));
+    const pendingId = addMsg({ role: "bot", text: s.checkingVercel, pending: true });
+    setBusy(true);
+    try {
+      const res = await fetch("/api/vercel/projects");
+      const data = await res.json();
+      if (!data.ok) {
+        if (isSessionExpired(res.status, data)) {
+          showSessionExpired(pendingId);
+          return;
+        }
+        updateMsg(pendingId, { text: describeError(s, data.error), pending: false });
+        return;
+      }
+      if (!Array.isArray(data.projects) || data.projects.length === 0) {
+        updateMsg(pendingId, { text: s.noProjectsFound, pending: false });
+        return;
+      }
+      projectsCacheRef.current = data.projects;
+      projectPickMsgIdRef.current = pendingId;
+      updateMsg(pendingId, {
+        text: s.askWhichProject,
+        pending: false,
+        quickReplies: projectQuickReplies(data.projects),
+      });
+    } catch {
+      updateMsg(pendingId, { text: describeError(s, null, true), pending: false });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleProjectPick(raw: string, sourceMsgId?: string) {
+    if (isBusyRef.current) return;
+    if (sourceMsgId) resolveReplies(sourceMsgId);
+    const typed = raw.trim();
+    const match = projectsCacheRef.current.find(
+      (p: any) => p.name.toLowerCase() === typed.toLowerCase() || p.id === typed
+    );
+    if (!match) {
+      addMsg({ role: "bot", text: s.projectNotFound(typed) });
+      return;
+    }
+    projectPickMsgIdRef.current = null;
+    addMsg({ role: "bot", text: s.foundRepo(match.name) });
+    setChat((c) => ({ ...c, projectId: match.id, vercelProjectName: match.name, step: "await_confirm" }));
+    addMsg({
+      role: "bot",
+      text: `${s.previewIntro}\n${s.previewOutroVercelUpdate(match.name)}`,
+      quickReplies: [
+        { label: s.confirmGo, value: "__confirm_push__", tone: "primary" },
+        { label: s.cancel, value: "__cancel_flow__", tone: "ghost" },
+      ],
+    });
+  }
+
+  // ---- vercel project naming (create flow) --------------------------------
+
+  function handleProjectNameInput(raw: string) {
+    const name = sanitizeProjectName(raw.trim());
+    if (!name) return;
+    setChat((c) => ({ ...c, vercelProjectName: name, step: "await_confirm" }));
+    const owner = chatRef.current.owner;
+    const repo = chatRef.current.repo;
+    const branch = chatRef.current.branch || "main";
+    addMsg({
+      role: "bot",
+      text: `${s.previewIntro}\n${s.previewOutroVercel(`${owner}/${repo}`, branch, name)}`,
+      quickReplies: [
+        { label: s.createGo, value: "__confirm_push__", tone: "primary" },
+        { label: s.cancel, value: "__cancel_flow__", tone: "ghost" },
+      ],
+    });
   }
 
   // ---- create flow: repo name --------------------------------------------
@@ -377,16 +930,115 @@ export default function CaptainHarbor() {
       role: "bot",
       text: `${s.previewIntro}\n${s.createPreviewOutro(chat.fileCount || 0)}\n${repoName}`,
       quickReplies: [
-        { label: s.createGo, value: "confirm", tone: "primary" },
-        { label: s.cancel, value: "cancel", tone: "ghost" },
+        { label: s.createGo, value: "__confirm_push__", tone: "primary" },
+        { label: s.cancel, value: "__cancel_flow__", tone: "ghost" },
       ],
     });
   }
 
-  // ---- execute ------------------------------------------------------------
+  // ---- execute (vercel) ----------------------------------------------------
+
+  async function handleConfirmVercel() {
+    setChat((c) => ({ ...c, step: "executing" }));
+
+    const isCreate = chatRef.current.action === "create";
+    const stepLabels = isCreate ? [s.stepCreateVercelProject, s.stepDeployVercel] : [s.stepDeployVercel];
+    const execId = addMsg({
+      role: "bot",
+      text: isCreate ? s.executingVercelCreate : s.executingVercelUpdate,
+      steps: stepLabels.map((label) => ({ label, done: false })),
+    });
+
+    try {
+      if (isCreate) {
+        const res = await fetch("/api/vercel/create-project", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            owner: chatRef.current.owner,
+            repo: chatRef.current.repo,
+            branch: chatRef.current.branch || undefined,
+            name: chatRef.current.vercelProjectName,
+          }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          if (isSessionExpired(res.status, data)) {
+            trackStep("push_failed", { provider: "vercel", action: "create", error: "session_expired" });
+            showSessionExpired(execId);
+            setChat((c) => ({ ...c, step: "await_confirm" }));
+            return;
+          }
+          trackStep("push_failed", { provider: "vercel", action: "create", error: data.error || "unknown" });
+          updateMsg(execId, { text: describeError(s, data.error), steps: undefined });
+          setChat((c) => ({ ...c, step: "await_confirm" }));
+          return;
+        }
+        trackStep("push_success", { provider: "vercel", action: "create" });
+        updateMsg(execId, { steps: stepLabels.map((label) => ({ label, done: true })) });
+        const url = data.deploymentUrl || data.dashboardUrl;
+        addMsg({
+          role: "bot",
+          text: s.doneVercelCreate,
+          quickReplies: [
+            ...(url ? [{ label: s.openDeployment, value: `__open__${url}`, tone: "primary" as const }] : []),
+            { label: s.doAnother, value: "__restart__", tone: "ghost" as const },
+          ],
+        });
+        setChat({ ...initialChatState, step: "done" });
+      } else {
+        const res = await fetch(`/api/vercel/projects/${chatRef.current.projectId}/deployments/git-deploy`, {
+          method: "POST",
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          if (isSessionExpired(res.status, data)) {
+            trackStep("push_failed", { provider: "vercel", action: "update", error: "session_expired" });
+            showSessionExpired(execId);
+            setChat((c) => ({ ...c, step: "await_confirm" }));
+            return;
+          }
+          trackStep("push_failed", { provider: "vercel", action: "update", error: data.error || "unknown" });
+          updateMsg(execId, { text: describeError(s, data.error), steps: undefined });
+          setChat((c) => ({ ...c, step: "await_confirm" }));
+          return;
+        }
+        trackStep("push_success", { provider: "vercel", action: "update" });
+        updateMsg(execId, { steps: stepLabels.map((label) => ({ label, done: true })) });
+        const url = data.deployment?.url;
+        addMsg({
+          role: "bot",
+          text: s.doneVercelUpdate,
+          quickReplies: [
+            ...(url ? [{ label: s.openDeployment, value: `__open__${url}`, tone: "primary" as const }] : []),
+            { label: s.doAnother, value: "__restart__", tone: "ghost" as const },
+          ],
+        });
+        setChat({ ...initialChatState, step: "done" });
+      }
+    } catch {
+      trackStep("push_failed", { provider: "vercel", action: chatRef.current.action || "unknown", error: "network" });
+      updateMsg(execId, { text: describeError(s, null, true), steps: undefined });
+      setChat((c) => ({ ...c, step: "await_confirm" }));
+    }
+  }
+
+  // ---- execute (github) -----------------------------------------------------
 
   async function handleConfirm(sourceMsgId?: string) {
+    if (isBusyRef.current) return;
+    setBusy(true);
     if (sourceMsgId) resolveReplies(sourceMsgId);
+
+    if (chatRef.current.provider === "vercel") {
+      try {
+        await handleConfirmVercel();
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     setChat((c) => ({ ...c, step: "executing" }));
 
     const isUpdate = chat.action === "update";
@@ -422,11 +1074,19 @@ export default function CaptainHarbor() {
       const data = await res.json();
 
       if (!data.ok) {
-        updateMsg(execId, { text: s.errorGeneric, steps: undefined });
+        if (isSessionExpired(res.status, data)) {
+          trackStep("push_failed", { provider: "github", action: chat.action || "unknown", error: "session_expired" });
+          showSessionExpired(execId);
+          setChat((c) => ({ ...c, step: "await_confirm" }));
+          return;
+        }
+        trackStep("push_failed", { provider: "github", action: chat.action || "unknown", error: data.error || "unknown" });
+        updateMsg(execId, { text: describeError(s, data.error), steps: undefined });
         setChat((c) => ({ ...c, step: "await_confirm" }));
         return;
       }
 
+      trackStep("push_success", { provider: "github", action: chat.action || "unknown" });
       updateMsg(execId, { steps: stepLabels.map((label) => ({ label, done: true })) });
       const url = data.repoUrl || data.commitUrl;
       addMsg({
@@ -439,8 +1099,11 @@ export default function CaptainHarbor() {
       });
       setChat({ ...initialChatState, step: "done" });
     } catch {
-      updateMsg(execId, { text: s.errorGeneric, steps: undefined });
+      trackStep("push_failed", { provider: "github", action: chat.action || "unknown", error: "network" });
+      updateMsg(execId, { text: describeError(s, null, true), steps: undefined });
       setChat((c) => ({ ...c, step: "await_confirm" }));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -451,7 +1114,33 @@ export default function CaptainHarbor() {
     if (!trimmed) return;
 
     if (trimmed === "__login__") {
+      // Save just enough to resume after the OAuth redirect (see the mount
+      // effect that reads this back and jumps straight to await_file).
+      const { provider, action } = chatRef.current;
+      if (provider && action) writeResumeState({ provider, action });
       window.location.href = "/api/auth/github";
+      return;
+    }
+    if (trimmed === "__login_vercel__") {
+      // Same idea, but the base GitHub session is already there — this is
+      // the *additional* Vercel connection, so it redirects to the Vercel
+      // OAuth route instead.
+      const { provider, action } = chatRef.current;
+      if (provider && action) writeResumeState({ provider, action });
+      window.location.href = "/api/auth/vercel";
+      return;
+    }
+    if (trimmed === "__resume_continue__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      addMsg({ role: "user", text: s.resumeContinue });
+      resumeAfterReload();
+      return;
+    }
+    if (trimmed === "__resume_restart__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      addMsg({ role: "user", text: s.resumeRestart });
+      pendingReloadResumeRef.current = null;
+      resetToIdle(false);
       return;
     }
     if (trimmed.startsWith("__open__")) {
@@ -460,6 +1149,23 @@ export default function CaptainHarbor() {
     }
     if (trimmed === "__restart__") {
       resetToIdle(false);
+      return;
+    }
+    if (trimmed === "__cancel_flow__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      addMsg({ role: "user", text: s.cancel });
+      resetToIdle(true);
+      return;
+    }
+    if (trimmed === "__confirm_push__") {
+      if (isBusyRef.current) return;
+      const label = chatRef.current.action === "create" ? s.createGo : s.confirmGo;
+      addMsg({ role: "user", text: label });
+      trackStep("confirmed", {
+        provider: chatRef.current.provider || "unknown",
+        action: chatRef.current.action || "unknown",
+      });
+      await handleConfirm(sourceMsgId);
       return;
     }
 
@@ -496,6 +1202,16 @@ export default function CaptainHarbor() {
       case "await_repo_name":
         handleRepoNameInput(trimmed);
         return;
+      case "await_project_pick":
+        if (trimmed === "cancel") {
+          resetToIdle(true);
+          return;
+        }
+        handleProjectPick(trimmed, sourceMsgId);
+        return;
+      case "await_project_name":
+        handleProjectNameInput(trimmed);
+        return;
       case "await_confirm":
         if (trimmed === "confirm") {
           await handleConfirm(sourceMsgId);
@@ -512,10 +1228,12 @@ export default function CaptainHarbor() {
   }
 
   function onQuickReply(msgId: string, qr: QuickReply) {
+    if (isBusyRef.current) return;
     void dispatch(qr.value, msgId);
   }
 
   function onSend() {
+    if (isBusyRef.current) return;
     const text = input;
     setInput("");
     void dispatch(text);
@@ -541,6 +1259,10 @@ export default function CaptainHarbor() {
 
       {drag.panelState !== "closed" && (
         <div
+          ref={panelRef}
+          role={drag.panelState === "full" || drag.panelState === "half" ? "dialog" : undefined}
+          aria-modal={drag.panelState === "full" || drag.panelState === "half" ? true : undefined}
+          aria-label={drag.panelState === "full" || drag.panelState === "half" ? "Captain Harbor" : undefined}
           className="fixed inset-x-0 z-40 flex flex-col overflow-hidden rounded-t-2xl border-t border-base-border bg-base-surface shadow-card"
           style={{
             top: drag.topStyle,
@@ -578,10 +1300,32 @@ export default function CaptainHarbor() {
 
           {drag.panelState !== "collapsed" && (
             <>
-              <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+              <div
+                ref={scrollRef}
+                onDragOver={onChatDragOver}
+                onDragLeave={onChatDragLeave}
+                onDrop={onChatDrop}
+                className="relative min-h-0 flex-1 overflow-y-auto px-4 pb-2"
+              >
                 {messages.map((m) => (
-                  <MessageBubble key={m.id} msg={m} lang={lang} onQuickReply={(qr) => onQuickReply(m.id, qr)} />
+                  <MessageBubble
+                    key={m.id}
+                    msg={m}
+                    lang={lang}
+                    disabled={isBusy}
+                    onQuickReply={(qr) => onQuickReply(m.id, qr)}
+                  />
                 ))}
+
+                {/* Drop target overlay (P2 #14) — only while actively waiting
+                    for a ZIP and a file is being dragged over the chat. */}
+                {isDraggingFile && chat.step === "await_file" && (
+                  <div className="pointer-events-none absolute inset-1 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-harbor-orange bg-base-surface/90">
+                    <p className="rounded-full bg-harbor-orange px-4 py-2 text-sm font-medium text-white shadow-glow-orange">
+                      {s.dropZipHere}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="shrink-0 border-t border-base-border p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
@@ -589,24 +1333,28 @@ export default function CaptainHarbor() {
                   <button
                     onClick={openFilePicker}
                     aria-label="attach zip"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-faint hover:bg-base-surface2 hover:text-ink"
+                    disabled={isBusy}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-faint hover:bg-base-surface2 hover:text-ink disabled:opacity-40 disabled:pointer-events-none"
                   >
                     <Paperclip size={18} strokeWidth={2} />
                   </button>
                   <input ref={fileInputRef} type="file" accept=".zip" className="hidden" onChange={onFileInputChange} />
                   <input
+                    ref={composerInputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") onSend();
                     }}
+                    disabled={isBusy}
                     placeholder={s.composerPlaceholder}
-                    className="min-w-0 flex-1 rounded-full border border-base-border bg-base-surface2 px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-harbor-orange"
+                    className="min-w-0 flex-1 rounded-full border border-base-border bg-base-surface2 px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-harbor-orange disabled:opacity-60"
                   />
                   <button
                     onClick={onSend}
                     aria-label="send"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-harbor-orange text-white"
+                    disabled={isBusy}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-harbor-orange text-white disabled:opacity-40 disabled:pointer-events-none"
                   >
                     <Send size={16} strokeWidth={2} />
                   </button>
@@ -623,10 +1371,12 @@ export default function CaptainHarbor() {
 function MessageBubble({
   msg,
   lang,
+  disabled,
   onQuickReply,
 }: {
   msg: ChatMessage;
   lang: "th" | "en";
+  disabled?: boolean;
   onQuickReply: (qr: QuickReply) => void;
 }) {
   const isUser = msg.role === "user";
@@ -669,12 +1419,14 @@ function MessageBubble({
               <button
                 key={i}
                 onClick={() => onQuickReply(qr)}
+                disabled={disabled}
                 className={
-                  qr.tone === "ghost"
+                  (qr.tone === "ghost"
                     ? "rounded-full border border-base-border px-3 py-1.5 text-xs text-ink-dim hover:bg-base-surface2"
                     : qr.tone === "danger"
                       ? "rounded-full bg-accent-red/90 px-3 py-1.5 text-xs font-medium text-white"
-                      : "rounded-full bg-harbor-orange px-3 py-1.5 text-xs font-medium text-white"
+                      : "rounded-full bg-harbor-orange px-3 py-1.5 text-xs font-medium text-white") +
+                  " disabled:opacity-40 disabled:pointer-events-none"
                 }
               >
                 {qr.value.startsWith("__open__") ? (
