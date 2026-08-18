@@ -218,7 +218,7 @@ export const cap = {
     errorVercelNoDeployment: "This project has no deployments yet — try deploying it instead.",
     installVercelAppButton: "Install Vercel GitHub App",
   },
-} as const;
+};
 
 export type CapDict = (typeof cap)["th"];
 

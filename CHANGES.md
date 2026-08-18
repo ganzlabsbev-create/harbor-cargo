@@ -100,3 +100,17 @@ persist ข้าม reload, back button, velocity snap, repo filter, error mapp
   ข้อ 14 และแก้ 4 บรรทัดตามข้อ 15 ด้านบน
 
 - **`lib/version.ts`** — bump เป็น `0.17.0` พร้อม changelog entry
+
+---
+
+### แก้ build error หลัง deploy จริง
+
+Vercel build fail ที่ type-check step: `CapDict` เดิม infer มาจาก `(typeof cap)["th"]` ตอนที่ `cap`
+ยังมี `as const` อยู่ — ทำให้ type ของ `CapDict` แคบไปเป็น literal type เฉพาะของ object `th`
+เป๊ะๆ (รวมข้อความ string ทุกตัวด้วย) พอเอา `s = cap[lang]` (ที่เป็น union ของ `th | en`) ไปส่งเข้า
+`describeError(s: CapDict, ...)` เลย type ไม่ตรงกัน เพราะ `en` มีข้อความคนละตัวกับ `th`
+
+แก้โดยเอา `as const` ออกจาก object `cap` ใน `lib/captain-harbor/strings.ts` — พอไม่มี `as const`
+TypeScript จะ widen string/function ทุกตัวเป็น `string`/`(...args) => string` ปกติ ทำให้ shape ของ
+`th` กับ `en` ตรงกันแบบ structural แล้ว ไม่กระทบพฤติกรรมตอนรันจริงเลย (ค่าที่ใช้จริงยังเป็นข้อความ
+เดิมทุกตัว แค่ type ที่ TypeScript มองกว้างขึ้น)
