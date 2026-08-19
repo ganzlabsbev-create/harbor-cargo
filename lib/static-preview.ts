@@ -30,13 +30,27 @@ const MIME: Record<string, string> = {
 // assets that just need a blob: URL.
 const TEXT_EXTS = new Set(["css", "js", "mjs", "json", "svg", "xml", "txt"]);
 
-// Injected just before </body> of the entry HTML. Forwards console output
-// and runtime errors to the parent page via postMessage, so Harbor's
-// Console panel can show them without the iframe needing allow-same-origin
-// (the iframe stays a sandboxed, opaque-origin document).
-const BRIDGE_SCRIPT = `
+// Injected just before </body> of the entry HTML. Forwards console output,
+// runtime errors, and network/resource activity to the parent page via
+// postMessage, so Harbor's Console and Network panels can show them without
+// the iframe needing allow-same-origin (the iframe stays a sandboxed,
+// opaque-origin document).
+//
+// `blobToPath` maps every blob: URL this build registered back to the
+// project-relative path it came from, so error messages and network
+// entries can show "src/main.js" instead of an opaque "blob:https://...".
+// Best-effort only, same spirit as buildStaticPreview() below: fetch/XHR
+// wrapping and resource load/error listeners cover the common cases, not
+// every possible way a page can move bytes around.
+function buildBridgeScript(blobToPath: Record<string, string>, entryPath: string): string {
+  return `
 <script>(function(){
+  var blobMap=${JSON.stringify(blobToPath)};
+  var entryPath=${JSON.stringify(entryPath)};
+  function friendly(url){ return (url && blobMap[url]) || url || entryPath; }
   function send(type,args){try{parent.postMessage({__harborPreview:true,type:type,args:args},"*");}catch(e){}}
+  function sendNetwork(entry){try{parent.postMessage({__harborPreview:true,type:"network",entry:entry},"*");}catch(e){}}
+
   ["log","warn","error","info"].forEach(function(level){
     var orig=console[level];
     console[level]=function(){
@@ -47,16 +61,79 @@ const BRIDGE_SCRIPT = `
       if(orig) orig.apply(console,arguments);
     };
   });
+
+  // Runtime script errors (bubble to window) — kept separate from the
+  // capture-phase listener below, which only handles resource load
+  // failures (img/link/script tags), since those don't bubble.
   window.addEventListener("error",function(e){
-    send("console:error",[String(e.message||"Script error")+" ("+(e.filename||"")+":"+(e.lineno||0)+")"]);
+    if(e.target && e.target!==window) return;
+    var file=friendly(e.filename);
+    var loc=file+":"+(e.lineno||0)+(e.colno?":"+e.colno:"");
+    send("console:error",[String(e.message||"Script error")+" ("+loc+")"]);
   });
   window.addEventListener("unhandledrejection",function(e){
     var reason=e.reason&&e.reason.message?e.reason.message:String(e.reason);
     send("console:error",["Unhandled promise rejection: "+reason]);
   });
+
+  // Resource loads: <img>, <script src>, <link href>, etc. Capture phase
+  // is required here because 'error' and 'load' on these elements don't
+  // bubble up to window on their own.
+  var RESOURCE_TAGS={img:1,script:1,link:1,source:1,iframe:1,audio:1,video:1};
+  window.addEventListener("error",function(e){
+    var t=e.target;
+    if(!t||t===window||!t.tagName) return;
+    if(!RESOURCE_TAGS[t.tagName.toLowerCase()]) return;
+    var url=t.src||t.href||"";
+    if(!url) return;
+    sendNetwork({url:url,name:friendly(url),ok:false,status:null,kind:"resource"});
+  },true);
+  window.addEventListener("load",function(e){
+    var t=e.target;
+    if(!t||t===window||!t.tagName) return;
+    if(!RESOURCE_TAGS[t.tagName.toLowerCase()]) return;
+    var url=t.src||t.href||"";
+    if(!url) return;
+    sendNetwork({url:url,name:friendly(url),ok:true,status:200,kind:"resource"});
+  },true);
+
+  // fetch()
+  var origFetch=window.fetch;
+  if(origFetch){
+    window.fetch=function(input,init){
+      var url=typeof input==="string"?input:(input&&input.url)||"";
+      return origFetch.apply(this,arguments).then(function(res){
+        sendNetwork({url:url,name:friendly(url),ok:res.ok,status:res.status,kind:"fetch"});
+        return res;
+      },function(err){
+        sendNetwork({url:url,name:friendly(url),ok:false,status:null,kind:"fetch"});
+        throw err;
+      });
+    };
+  }
+
+  // XMLHttpRequest
+  var OrigXHR=window.XMLHttpRequest;
+  if(OrigXHR){
+    window.XMLHttpRequest=function(){
+      var xhr=new OrigXHR();
+      var url="";
+      var origOpen=xhr.open;
+      xhr.open=function(method,u){
+        url=u;
+        return origOpen.apply(xhr,arguments);
+      };
+      xhr.addEventListener("loadend",function(){
+        sendNetwork({url:url,name:friendly(url),ok:xhr.status>=200&&xhr.status<400,status:xhr.status||null,kind:"xhr"});
+      });
+      return xhr;
+    };
+  }
+
   send("ready",[]);
 })();</script>
 `;
+}
 
 export interface BuiltPreview {
   /** Full HTML document, ready to assign to an iframe's srcDoc. */
@@ -145,10 +222,14 @@ export function buildStaticPreview(files: ClientFile[]): BuiltPreview | null {
     urlByBasename.set(f.path.split("/").pop() || f.path, url);
   }
 
+  const blobToPath: Record<string, string> = {};
+  for (const [path, url] of urlByPath) blobToPath[url] = path;
+
+  const bridgeScript = buildBridgeScript(blobToPath, entry.path);
   let entryHtml = rewriteRefs(decoder.decode(entry.bytes));
   entryHtml = /<\/body>/i.test(entryHtml)
-    ? entryHtml.replace(/<\/body>/i, `${BRIDGE_SCRIPT}</body>`)
-    : entryHtml + BRIDGE_SCRIPT;
+    ? entryHtml.replace(/<\/body>/i, `${bridgeScript}</body>`)
+    : entryHtml + bridgeScript;
 
   return { html: entryHtml, entryPath: entry.path, objectUrls };
 }

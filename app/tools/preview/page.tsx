@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
   RotateCw,
   Maximize2,
-  FolderTree,
   FolderPlus,
   RefreshCcw,
   TriangleAlert,
@@ -16,13 +15,19 @@ import {
   X,
   Terminal,
   MonitorSmartphone,
+  Smartphone,
+  Tablet,
+  Laptop,
+  RotateCcw,
+  type LucideIcon,
 } from "lucide-react";
 import Header from "@/components/Header";
 import UploadZone, { UploadedBlob } from "@/components/UploadZone";
-import TreeView from "@/components/TreeView";
 import ZipWarnings, { ZipWarningsData } from "@/components/ZipWarnings";
 import PreviewFrame from "@/components/PreviewFrame";
 import PreviewLog, { PreviewLogLine } from "@/components/PreviewLog";
+import NetworkLog, { NetworkEntry } from "@/components/NetworkLog";
+import FileExplorer, { FileOpenRequest } from "@/components/FileExplorer";
 import { useLang } from "@/lib/i18n-context";
 import { useBlobCleanup } from "@/lib/use-blob-cleanup";
 import { extractZipClient, ClientFile } from "@/lib/client-zip";
@@ -38,9 +43,18 @@ interface AnalyzeResult {
   warnings?: ZipWarningsData;
 }
 
-type Section = "preview" | "files" | "logs";
+type Section = "preview" | "files" | "logs" | "network";
 type BuildState = "idle" | "installing" | "starting" | "loading" | "ready" | "unsupported" | "error";
 type Mode = "static" | "devserver" | null;
+
+interface ViewportPreset {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  /** width/height in CSS px, or null for "Fill" (the previous, un-emulated behavior). */
+  width: number | null;
+  height: number | null;
+}
 
 export default function PreviewPage() {
   const { t } = useLang();
@@ -59,9 +73,44 @@ export default function PreviewPage() {
   const [devFramework, setDevFramework] = useState<string | null>(null);
   const [frameKey, setFrameKey] = useState(0);
   const [logs, setLogs] = useState<PreviewLogLine[]>([]);
+  const [networkEntries, setNetworkEntries] = useState<NetworkEntry[]>([]);
+  const [openFileRequest, setOpenFileRequest] = useState<FileOpenRequest | null>(null);
   const [section, setSection] = useState<Section>("preview");
   const [menuOpen, setMenuOpen] = useState(false);
   const [handingOff, setHandingOff] = useState(false);
+
+  // --- Responsive preview (viewport emulation) ---------------------------
+  // A state setter (not a plain useRef) so the observer effect below re-runs
+  // whenever the container div itself mounts/unmounts — which happens every
+  // time the person switches the ☰ menu away from Preview and back, since
+  // that div only exists while section === "preview".
+  const [previewContainerEl, setPreviewContainerEl] = useState<HTMLDivElement | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [viewportKey, setViewportKey] = useState<string>("full");
+  const [rotated, setRotated] = useState(false);
+
+  useEffect(() => {
+    if (!previewContainerEl || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setContainerWidth(width);
+    });
+    observer.observe(previewContainerEl);
+    return () => observer.disconnect();
+  }, [previewContainerEl]);
+
+  const VIEWPORTS: ViewportPreset[] = [
+    { key: "full", label: t("preview_viewport_full"), icon: MonitorSmartphone, width: null, height: null },
+    { key: "phone", label: t("preview_viewport_phone"), icon: Smartphone, width: 390, height: 844 },
+    { key: "phone_lg", label: t("preview_viewport_phone_lg"), icon: Smartphone, width: 428, height: 926 },
+    { key: "tablet", label: t("preview_viewport_tablet"), icon: Tablet, width: 768, height: 1024 },
+    { key: "laptop", label: t("preview_viewport_laptop"), icon: Laptop, width: 1280, height: 800 },
+  ];
+  const activeViewport = VIEWPORTS.find((v) => v.key === viewportKey) ?? VIEWPORTS[0];
+  const isEmulated = activeViewport.width != null && activeViewport.height != null;
+  const emulatedWidth = isEmulated ? (rotated ? (activeViewport.height as number) : (activeViewport.width as number)) : 0;
+  const emulatedHeight = isEmulated ? (rotated ? (activeViewport.width as number) : (activeViewport.height as number)) : 0;
+  const emulatedScale = isEmulated && containerWidth > 0 ? Math.min(1, containerWidth / emulatedWidth) : 1;
 
   // Dev-server mode needs window.crossOriginIsolated === true, which only
   // gets set when the *document itself* was loaded with COOP/COEP headers
@@ -97,9 +146,23 @@ export default function PreviewPage() {
     setLogs((prev) => [...prev, line]);
   }, []);
 
+  const appendNetwork = useCallback((entry: NetworkEntry) => {
+    setNetworkEntries((prev) => [...prev, entry]);
+  }, []);
+
+  // Jump from a "file.js:12" tap in Console straight to that source, in the Files panel.
+  const nonceRef = useRef(0);
+  const openFile = useCallback((path: string, line?: number) => {
+    nonceRef.current += 1;
+    setOpenFileRequest({ path, line, nonce: nonceRef.current });
+    setSection("files");
+  }, []);
+
   async function runPreview(projectFiles: ClientFile[]) {
     setBuildError(null);
     setLogs([]);
+    setNetworkEntries([]);
+    setOpenFileRequest(null);
     setMode(null);
 
     // Try the real dev server first when this looks like a Node/framework
@@ -206,12 +269,11 @@ export default function PreviewPage() {
     router.push(`/tools/github/${githubMode}?${params.toString()}`);
   }
 
-  const displayTree = useMemo(() => analysis?.tree ?? [], [analysis]);
-
   const SECTIONS: { key: Section; label: string }[] = [
     { key: "preview", label: t("preview_tab_preview") },
     { key: "files", label: t("preview_tab_files") },
     { key: "logs", label: t("preview_tab_logs") },
+    { key: "network", label: t("preview_tab_network") },
   ];
 
   const isBusy = buildState === "installing" || buildState === "starting" || buildState === "loading";
@@ -294,24 +356,67 @@ export default function PreviewPage() {
 
             {section === "preview" && (
               <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    onClick={handleReload}
-                    disabled={isBusy}
-                    className="flex items-center gap-1.5 rounded-lg border border-base-border bg-base-surface px-3 py-1.5 text-xs font-medium text-ink-dim disabled:opacity-40"
-                  >
-                    <RotateCw size={13} /> {t("preview_reload")}
-                  </button>
-                  <button
-                    onClick={handleFullscreen}
-                    disabled={buildState !== "ready"}
-                    className="flex items-center gap-1.5 rounded-lg border border-base-border bg-base-surface px-3 py-1.5 text-xs font-medium text-ink-dim disabled:opacity-40"
-                  >
-                    <Maximize2 size={13} /> {t("preview_fullscreen")}
-                  </button>
+                {/* Viewport presets — horizontally scrollable so it never wraps or
+                    crowds out the Reload/Fullscreen row on a narrow phone. */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                  {VIEWPORTS.map((v) => {
+                    const Icon = v.icon;
+                    const active = v.key === viewportKey;
+                    return (
+                      <button
+                        key={v.key}
+                        onClick={() => setViewportKey(v.key)}
+                        className={`flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+                          active
+                            ? "border-harbor-orange bg-harbor-orange/10 text-harbor-orange"
+                            : "border-base-border bg-base-surface text-ink-dim"
+                        }`}
+                      >
+                        <Icon size={13} /> {v.label}
+                      </button>
+                    );
+                  })}
+                  {isEmulated && (
+                    <button
+                      onClick={() => setRotated((v) => !v)}
+                      aria-label={t("preview_viewport_rotate")}
+                      className="flex shrink-0 items-center justify-center rounded-lg border border-base-border bg-base-surface p-1.5 text-ink-dim"
+                    >
+                      <RotateCcw size={13} />
+                    </button>
+                  )}
                 </div>
 
-                <div className="h-[26rem] overflow-hidden rounded-xl border border-base-border bg-base-surface2">
+                <div className="flex items-center justify-between gap-2">
+                  {isEmulated ? (
+                    <span className="font-mono text-[11px] text-ink-faint">
+                      {emulatedWidth} × {emulatedHeight}
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleReload}
+                      disabled={isBusy}
+                      className="flex items-center gap-1.5 rounded-lg border border-base-border bg-base-surface px-3 py-1.5 text-xs font-medium text-ink-dim disabled:opacity-40"
+                    >
+                      <RotateCw size={13} /> {t("preview_reload")}
+                    </button>
+                    <button
+                      onClick={handleFullscreen}
+                      disabled={buildState !== "ready"}
+                      className="flex items-center gap-1.5 rounded-lg border border-base-border bg-base-surface px-3 py-1.5 text-xs font-medium text-ink-dim disabled:opacity-40"
+                    >
+                      <Maximize2 size={13} /> {t("preview_fullscreen")}
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  ref={setPreviewContainerEl}
+                  className="h-[26rem] overflow-auto rounded-xl border border-base-border bg-base-surface2"
+                >
                   {buildState === "installing" && (
                     <div className="flex h-full items-center justify-center gap-2 px-6 text-center text-sm text-ink-dim">
                       <Loader2 size={18} className="animate-spin" /> {t("preview_installing")}
@@ -342,10 +447,30 @@ export default function PreviewPage() {
                     </div>
                   )}
                   {buildState === "ready" && mode === "static" && staticPreview && (
-                    <PreviewFrame html={staticPreview.html} frameKey={frameKey} onMessage={appendLog} />
+                    isEmulated ? (
+                      <div style={{ width: emulatedWidth * emulatedScale, height: emulatedHeight * emulatedScale }}>
+                        <div
+                          style={{ width: emulatedWidth, height: emulatedHeight, transform: `scale(${emulatedScale})`, transformOrigin: "top left" }}
+                        >
+                          <PreviewFrame html={staticPreview.html} frameKey={frameKey} onMessage={appendLog} onNetwork={appendNetwork} />
+                        </div>
+                      </div>
+                    ) : (
+                      <PreviewFrame html={staticPreview.html} frameKey={frameKey} onMessage={appendLog} onNetwork={appendNetwork} />
+                    )
                   )}
                   {buildState === "ready" && mode === "devserver" && devHandle && (
-                    <PreviewFrame src={devHandle.url} frameKey={frameKey} onMessage={appendLog} />
+                    isEmulated ? (
+                      <div style={{ width: emulatedWidth * emulatedScale, height: emulatedHeight * emulatedScale }}>
+                        <div
+                          style={{ width: emulatedWidth, height: emulatedHeight, transform: `scale(${emulatedScale})`, transformOrigin: "top left" }}
+                        >
+                          <PreviewFrame src={devHandle.url} frameKey={frameKey} onMessage={appendLog} />
+                        </div>
+                      </div>
+                    ) : (
+                      <PreviewFrame src={devHandle.url} frameKey={frameKey} onMessage={appendLog} />
+                    )
                   )}
                 </div>
               </div>
@@ -353,14 +478,27 @@ export default function PreviewPage() {
 
             {section === "files" && (
               <div className="max-h-[26rem] overflow-y-auto rounded-xl border border-base-border bg-base-bg p-2">
-                <div className="flex items-center gap-1 px-1 pb-1 text-xs text-ink-faint">
-                  <FolderTree size={14} /> {t("file_structure")}
-                </div>
-                <TreeView nodes={displayTree} />
+                <FileExplorer
+                  files={files ?? []}
+                  openRequest={openFileRequest}
+                  emptyLabel={t("preview_files_empty")}
+                  fileStructureLabel={t("file_structure")}
+                  binaryLabel={t("preview_file_binary")}
+                  truncatedLabel={t("preview_file_truncated")}
+                  backLabel={t("preview_file_back")}
+                />
               </div>
             )}
 
-            {section === "logs" && <PreviewLog lines={logs} emptyLabel={t("preview_console_empty")} />}
+            {section === "logs" && <PreviewLog lines={logs} emptyLabel={t("preview_console_empty")} onOpenFile={openFile} />}
+
+            {section === "network" && (
+              <NetworkLog
+                entries={networkEntries}
+                emptyLabel={t("preview_network_empty")}
+                unavailableLabel={mode === "devserver" ? t("preview_network_unavailable_devserver") : undefined}
+              />
+            )}
 
             {/* Ship */}
             <div className="mt-2 flex flex-col gap-2">

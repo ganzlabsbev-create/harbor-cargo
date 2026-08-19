@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import type { PreviewLogLine } from "./PreviewLog";
+import type { NetworkEntry } from "./NetworkLog";
 
 /** @deprecated kept as an alias so any external import of the old name still works — use PreviewLogLine (components/PreviewLog.tsx) directly in new code. */
 export type ConsoleLine = PreviewLogLine;
@@ -22,30 +23,37 @@ export type ConsoleLine = PreviewLogLine;
  *   fail without it. There is no console bridge in this mode (we can't
  *   inject into someone else's dev server's HTML), so devServer console
  *   output is instead read from lib/dev-server-preview.ts's process log.
+ *   `onNetwork` never fires in this mode either, for the same reason.
  */
 export default function PreviewFrame({
   html,
   src,
   frameKey,
   onMessage,
+  onNetwork,
 }: {
   html?: string;
   src?: string;
   frameKey: number;
   onMessage: (line: PreviewLogLine) => void;
+  onNetwork?: (entry: NetworkEntry) => void;
 }) {
   useEffect(() => {
     if (src) return; // no postMessage bridge available for a cross-origin dev server URL
     function handleMessage(e: MessageEvent) {
       const data = e.data;
-      if (!data || data.__harborPreview !== true) return;
-      if (typeof data.type !== "string" || !data.type.startsWith("console:")) return;
+      if (!data || data.__harborPreview !== true || typeof data.type !== "string") return;
+      if (data.type === "network") {
+        if (onNetwork && data.entry) onNetwork({ ...data.entry, ts: Date.now() });
+        return;
+      }
+      if (!data.type.startsWith("console:")) return;
       const level = data.type.slice("console:".length) as PreviewLogLine["level"];
       onMessage({ level, text: (data.args || []).join(" "), ts: Date.now() });
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [onMessage, src]);
+  }, [onMessage, onNetwork, src]);
 
   if (src) {
     return (
