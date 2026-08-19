@@ -464,3 +464,24 @@ export async function getDeploymentError(token: string, deploymentId: string, te
       : "The deployment failed, but Vercel didn't return a specific error message.");
   return { deploymentId, message, code: data.errorCode || data.error?.code || null };
 }
+
+export interface VercelDeploymentStatus {
+  id: string;
+  state: string;
+  url: string | null;
+}
+
+/**
+ * Lightweight status check for a single deployment (state only, no error
+ * detail — see getDeploymentError above for that) — used to poll a
+ * just-triggered deploy until it leaves BUILDING/QUEUED/INITIALIZING, so
+ * the app can report the real outcome instead of just "request accepted".
+ */
+export async function getDeploymentStatus(token: string, deploymentId: string, teamId?: string | null): Promise<VercelDeploymentStatus> {
+  const data = await vc(token, withTeam(`/v13/deployments/${deploymentId}`, teamId));
+  return {
+    id: deploymentId,
+    state: String(data.readyState || data.state || "").toUpperCase(),
+    url: data.url ? `https://${data.url}` : null,
+  };
+}

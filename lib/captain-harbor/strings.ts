@@ -139,6 +139,15 @@ interface CapStrings {
   projectsListIntro: (n: number) => string;
   deploymentsListIntro: (name: string) => string;
   deploymentsEmpty: (name: string) => string;
+
+  // ---- P4: surfacing deploy build errors inline instead of "go check
+  // Vercel yourself" (see lib/vercel.ts getDeploymentError/getDeploymentStatus) ----
+  copyErrorLabel: string;
+  copiedLabel: string;
+  deploymentErrorIntro: (name: string) => string;
+  checkingDeployStatus: string;
+  deployStillBuilding: (name: string) => string;
+  deployFailedShort: string;
 }
 
 export const cap: Record<CapLang, CapStrings> = {
@@ -277,6 +286,15 @@ export const cap: Record<CapLang, CapStrings> = {
     projectsListIntro: (n: number) => `เจอ Vercel Project ในบัญชีนี้ ${n} โปรเจกต์:`,
     deploymentsListIntro: (name: string) => `Deployment ล่าสุดของ "${name}":`,
     deploymentsEmpty: (name: string) => `Project "${name}" ยังไม่เคย deploy เลย`,
+
+    // ---- P4: inline deploy error surfacing ----
+    copyErrorLabel: "คัดลอก Error",
+    copiedLabel: "คัดลอกแล้ว ✓",
+    deploymentErrorIntro: (name: string) => `Deployment ล่าสุดของ "${name}" ล้มเหลว:`,
+    checkingDeployStatus: "กำลังตรวจสอบผลลัพธ์ deploy...",
+    deployStillBuilding: (name: string) =>
+      `"${name}" ยัง build ไม่เสร็จ (ใช้เวลานานกว่าปกติ) เดี๋ยวลองกด "View deployments" ดูอีกทีได้เลย`,
+    deployFailedShort: "Deploy ล้มเหลว",
   },
   en: {
     greeting: "⚓ Captain Harbor is ready.\nType a service name, e.g. \"github\", or type \"help\" for the menu.",
@@ -412,6 +430,15 @@ export const cap: Record<CapLang, CapStrings> = {
     projectsListIntro: (n: number) => `Found ${n} Vercel projects on this account:`,
     deploymentsListIntro: (name: string) => `Latest deployments for "${name}":`,
     deploymentsEmpty: (name: string) => `Project "${name}" has no deployments yet.`,
+
+    // ---- P4: inline deploy error surfacing ----
+    copyErrorLabel: "Copy error",
+    copiedLabel: "Copied ✓",
+    deploymentErrorIntro: (name: string) => `The latest deployment for "${name}" failed:`,
+    checkingDeployStatus: "Checking deploy status...",
+    deployStillBuilding: (name: string) =>
+      `"${name}" is still building (taking longer than usual) — try "View deployments" again in a bit.`,
+    deployFailedShort: "Deploy failed",
   },
 };
 

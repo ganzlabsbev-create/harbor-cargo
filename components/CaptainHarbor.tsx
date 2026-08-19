@@ -1148,6 +1148,21 @@ export default function CaptainHarbor() {
    *  deployments") — calls the same GET .../deployments route the Vercel
    *  manage page uses, then returns to the Vercel menu instead of
    *  proceeding into redeploy/confirm. */
+  /** Shared "here's why it failed" box — real error text pulled from
+   *  Vercel (same getDeploymentError() the manage page's error card uses),
+   *  plus a one-tap copy button. Used both after "View deployments" and
+   *  right after triggering a deploy/redeploy from chat. */
+  function showDeploymentErrorBox(name: string, message: string, extraQuickReplies: QuickReply[] = []) {
+    addMsg({
+      role: "bot",
+      text: `${s.deploymentErrorIntro(name)}\n\n${message}`,
+      quickReplies: [
+        { label: s.copyErrorLabel, value: `__copy__${encodeURIComponent(message)}`, tone: "ghost" },
+        ...extraQuickReplies,
+      ],
+    });
+  }
+
   async function showProjectDeployments(projectId: string, name: string) {
     setBusy(true);
     const pendingId = addMsg({ role: "bot", text: s.checkingVercel, pending: true });
@@ -1171,6 +1186,24 @@ export default function CaptainHarbor() {
           .map((d: any) => `• ${d.state || "?"} — ${d.url || d.id}`)
           .join("\n");
         updateMsg(pendingId, { text: `${s.deploymentsListIntro(name)}\n${lines}`, pending: false });
+
+        // The latest deployment is deployments[0] (API returns newest
+        // first) — if it's the failing/canceled one, pull the actual
+        // reason instead of leaving it as just a status word above.
+        const latest = deployments[0];
+        const latestState = String(latest?.state || "").toUpperCase();
+        if (latest && (latestState === "ERROR" || latestState === "CANCELED")) {
+          try {
+            const errRes = await fetch(`/api/vercel/projects/${projectId}/deployments/${latest.id}/error`);
+            const errData = await errRes.json();
+            if (errData.ok && errData.deployError?.message) {
+              showDeploymentErrorBox(name, errData.deployError.message);
+            }
+          } catch {
+            // Couldn't fetch the detailed reason — the status line above
+            // still told them it errored, not worth blocking on this.
+          }
+        }
       }
       setChat((c) => ({ ...c, step: "await_action" }));
       showVercelMenu();
@@ -1285,16 +1318,86 @@ export default function CaptainHarbor() {
         }
         trackStep("push_success", { provider: "vercel", action: "update" });
         updateMsg(execId, { steps: stepLabels.map((label) => ({ label, done: true })) });
+
+        // The request above only means "Vercel accepted the deploy" — the
+        // actual build can still fail afterward. Poll briefly so a failed
+        // build is reported right here instead of the old false-positive
+        // "Deployment complete!" (the exact gap the person asked to fix —
+        // this now reuses the same getDeploymentError()/getDeploymentStatus()
+        // the manage page's error card already relies on).
+        const deploymentId = data.deployment?.id as string | undefined;
+        const projectName = chatRef.current.vercelProjectName || "";
         const url = data.deployment?.url;
-        addMsg({
-          role: "bot",
-          text: s.doneVercelUpdate,
-          quickReplies: [
-            ...(url ? [{ label: s.openDeployment, value: `__open__${url}`, tone: "primary" as const }] : []),
-            { label: s.doAnother, value: "__restart__", tone: "ghost" as const },
-          ],
+
+        if (!deploymentId) {
+          // No id to poll (shouldn't normally happen) — fall back to the
+          // original immediate "complete" message rather than block.
+          addMsg({
+            role: "bot",
+            text: s.doneVercelUpdate,
+            quickReplies: [
+              ...(url ? [{ label: s.openDeployment, value: `__open__${url}`, tone: "primary" as const }] : []),
+              { label: s.doAnother, value: "__restart__", tone: "ghost" as const },
+            ],
+          });
+          setChat({ ...initialChatState, step: "done" });
+          return;
+        }
+
+        const statusId = addMsg({ role: "bot", text: s.checkingDeployStatus, pending: true });
+        let finalState = String(data.deployment?.state || "").toUpperCase();
+        const maxAttempts = 8; // ~2s apart -> up to ~16s before giving up and calling it "still building"
+        for (let attempt = 0; attempt < maxAttempts && !["READY", "ERROR", "CANCELED"].includes(finalState); attempt++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          try {
+            const statusRes = await fetch(`/api/vercel/projects/${chatRef.current.projectId}/deployments/${deploymentId}/status`);
+            const statusData = await statusRes.json();
+            if (statusData.ok && statusData.status?.state) finalState = statusData.status.state;
+          } catch {
+            break; // network hiccup mid-poll — report with whatever we last had
+          }
+        }
+
+        if (finalState === "ERROR" || finalState === "CANCELED") {
+          trackStep("push_failed", { provider: "vercel", action: "update", error: "build_failed" });
+          updateMsg(statusId, { text: s.deployFailedShort, pending: false });
+          try {
+            const errRes = await fetch(`/api/vercel/projects/${chatRef.current.projectId}/deployments/${deploymentId}/error`);
+            const errData = await errRes.json();
+            if (errData.ok && errData.deployError?.message) {
+              showDeploymentErrorBox(projectName, errData.deployError.message, [
+                { label: s.doAnother, value: "__restart__", tone: "ghost" },
+              ]);
+            }
+          } catch {
+            // Status already told them it failed above — the detailed
+            // reason just isn't available, not worth blocking on it.
+          }
+          setChat((c) => ({ ...c, step: "await_confirm" }));
+          return;
+        }
+
+        if (finalState === "READY") {
+          updateMsg(statusId, {
+            pending: false,
+            text: s.doneVercelUpdate,
+            quickReplies: [
+              ...(url ? [{ label: s.openDeployment, value: `__open__${url}`, tone: "primary" as const }] : []),
+              { label: s.doAnother, value: "__restart__", tone: "ghost" as const },
+            ],
+          });
+          setChat({ ...initialChatState, step: "done" });
+          return;
+        }
+
+        // Still building after the poll window — don't falsely claim
+        // success, point at View deployments so they can check back.
+        updateMsg(statusId, {
+          pending: false,
+          text: s.deployStillBuilding(projectName),
+          quickReplies: [{ label: s.viewDeploymentsLabel, value: "__vc_view_deployments__", tone: "primary" }],
         });
-        setChat({ ...initialChatState, step: "done" });
+        setChat((c) => ({ ...c, step: "await_action" }));
       }
     } catch {
       trackStep("push_failed", { provider: "vercel", action: chatRef.current.action || "unknown", error: "network" });
@@ -1625,6 +1728,36 @@ export default function CaptainHarbor() {
   function onQuickReply(msgId: string, qr: QuickReply) {
     if (isBusyRef.current) return;
     bumpInteraction();
+    // Copy-to-clipboard buttons (deployment error boxes) never go through
+    // dispatch() — they're a pure client-side action, not a conversation
+    // turn, so nothing gets echoed and the chat step/workflow is untouched.
+    if (qr.value.startsWith("__copy__")) {
+      const text = decodeURIComponent(qr.value.slice("__copy__".length));
+      void navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msgId && m.quickReplies
+                ? { ...m, quickReplies: m.quickReplies.map((r) => (r.value === qr.value ? { ...r, label: s.copiedLabel } : r)) }
+                : m
+            )
+          );
+          window.setTimeout(() => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msgId && m.quickReplies
+                  ? { ...m, quickReplies: m.quickReplies.map((r) => (r.value === qr.value ? { ...r, label: s.copyErrorLabel } : r)) }
+                  : m
+              )
+            );
+          }, 1500);
+        })
+        .catch(() => {
+          // clipboard access denied — nothing more we can do here
+        });
+      return;
+    }
     void dispatch(qr.value, msgId);
   }
 

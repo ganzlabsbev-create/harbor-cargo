@@ -155,6 +155,22 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  // Poll while the latest deployment is still in progress, so a build that
+  // fails *after* this page has already loaded still surfaces its error
+  // automatically — without this, refreshProject() only ever ran once on
+  // mount (or after tapping Deploy/Rebuild), so a failure that happened in
+  // between just silently sat there until the next manual reload.
+  const pendingState = (project?.latestDeployment?.state || "").toUpperCase();
+  const isDeploymentPending = ["BUILDING", "QUEUED", "INITIALIZING"].includes(pendingState);
+  useEffect(() => {
+    if (!isDeploymentPending) return;
+    const id = window.setInterval(() => {
+      refreshProject();
+    }, 4000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDeploymentPending, projectId]);
+
   async function handleDeployFromGit() {
     if (!window.confirm(t("deploy_from_git_confirm"))) return;
     setGitDeploying(true);
@@ -297,28 +313,30 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
               />
             )}
             {section === "danger" && <DangerSection projectId={projectId} project={project} t={t} inputClass={inputClass} router={router} />}
+
+            {/* Deployment error — always inline at the very bottom of the
+                page content (not a tap-to-expand overlay), so it's visible
+                immediately without an extra step. */}
+            <DeployErrorCard deployError={deployError} t={t} />
           </>
         )}
       </div>
-
-      <DeployErrorBar deployError={deployError} t={t} />
     </main>
   );
 }
 
 /**
- * Fixed bar pinned to the bottom of the viewport — only rendered when the
- * project's latest deployment actually failed. Collapsed by default (a
- * short tap target so it doesn't cover content); tapping expands it into a
- * bottom sheet with the full error text and a copy button.
+ * Inline card shown at the bottom of the page whenever the project's
+ * latest deployment is currently ERROR/CANCELED — full error text plus a
+ * one-tap copy button, so there's no need to open the Vercel dashboard
+ * just to read why a deploy failed.
  */
-function DeployErrorBar({ deployError, t }: { deployError: DeployError | null; t: (k: any) => string }) {
-  const [expanded, setExpanded] = useState(false);
+function DeployErrorCard({ deployError, t }: { deployError: DeployError | null; t: (k: any) => string }) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!deployError) setExpanded(false);
-  }, [deployError]);
+    setCopied(false);
+  }, [deployError?.deploymentId, deployError?.message]);
 
   if (!deployError) return null;
 
@@ -332,44 +350,22 @@ function DeployErrorBar({ deployError, t }: { deployError: DeployError | null; t
     }
   }
 
-  if (!expanded) {
-    return (
-      <button
-        onClick={() => setExpanded(true)}
-        className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-center gap-2 bg-accent-red px-4 py-3 text-sm font-medium text-white shadow-[0_-2px_10px_rgba(0,0,0,0.15)]"
-      >
-        <AlertTriangle size={16} className="shrink-0" />
-        <span className="truncate">{t("deployment_error_bar_label")}</span>
-      </button>
-    );
-  }
-
   return (
-    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/50" onClick={() => setExpanded(false)}>
-      <div
-        className="flex max-h-[75vh] flex-col gap-3 rounded-t-2xl border-t border-base-border bg-base-surface p-4 shadow-card"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-accent-red">
-            <AlertTriangle size={18} />
-            <h2 className="font-display text-base font-semibold">{t("deployment_error_title")}</h2>
-          </div>
-          <button onClick={() => setExpanded(false)} aria-label={t("deployment_error_close")} className="text-ink-faint">
-            <X size={20} />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-xl bg-base-surface2 p-3">
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs text-ink-dim">{deployError.message}</pre>
-        </div>
-        <button
-          onClick={copyError}
-          className="flex items-center justify-center gap-2 rounded-xl border border-base-border px-4 py-2.5 text-sm font-medium text-ink-dim"
-        >
-          {copied ? <Check size={15} className="text-accent-green" /> : <Copy size={15} />}
-          {copied ? t("deployment_error_copied") : t("deployment_error_copy_button")}
-        </button>
+    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-accent-red/30 bg-accent-red/5 p-4">
+      <div className="flex items-center gap-2 text-accent-red">
+        <AlertTriangle size={18} />
+        <h2 className="font-display text-base font-semibold">{t("deployment_error_title")}</h2>
       </div>
+      <div className="max-h-64 overflow-y-auto rounded-xl bg-base-surface2 p-3">
+        <pre className="whitespace-pre-wrap break-words font-mono text-xs text-ink-dim">{deployError.message}</pre>
+      </div>
+      <button
+        onClick={copyError}
+        className="flex items-center justify-center gap-2 rounded-xl border border-base-border bg-base-surface px-4 py-2.5 text-sm font-medium text-ink-dim active:scale-[0.99]"
+      >
+        {copied ? <Check size={15} className="text-accent-green" /> : <Copy size={15} />}
+        {copied ? t("deployment_error_copied") : t("deployment_error_copy_button")}
+      </button>
     </div>
   );
 }
