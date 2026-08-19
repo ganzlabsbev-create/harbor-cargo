@@ -111,6 +111,34 @@ interface CapStrings {
   errorVercelNoGitLink: string;
   errorVercelNoDeployment: string;
   installVercelAppButton: string;
+
+  // ---- P3: richer home/help/menu copy (interaction-only, no new providers) ----
+  homePrompt: string;
+  helpAndCommandsLabel: string;
+  uploadProjectLabel: string;
+  updateRepositoryLabel: string;
+  createRepositoryLabel: string;
+  viewRepositoriesLabel: string;
+  deployProjectLabel: string;
+  redeployProjectLabel: string;
+  viewProjectsLabel: string;
+  viewDeploymentsLabel: string;
+  backLabel: string;
+  githubMenuPrompt: string;
+  vercelMenuPrompt: string;
+  helpIntro: string;
+  myCapabilitiesLabel: string;
+  commandsLabel: string;
+  helpGithubText: string;
+  helpVercelText: string;
+  capabilitiesText: string;
+  commandsListText: string;
+  fallbackUnrecognized: string;
+  askWhichProjectForDeployments: string;
+  repositoriesListIntro: (n: number) => string;
+  projectsListIntro: (n: number) => string;
+  deploymentsListIntro: (name: string) => string;
+  deploymentsEmpty: (name: string) => string;
 }
 
 export const cap: Record<CapLang, CapStrings> = {
@@ -217,6 +245,38 @@ export const cap: Record<CapLang, CapStrings> = {
     errorVercelNoGitLink: "Project นี้ไม่ได้ผูกกับ Git repository เลยไม่มี branch ให้ดึงข้อมูลมา",
     errorVercelNoDeployment: "Project นี้ยังไม่เคย deploy เลย ลอง deploy ใหม่แทน",
     installVercelAppButton: "ติดตั้ง Vercel GitHub App",
+
+    // ---- P3: richer home/help/menu copy ----
+    homePrompt: "อยากให้ช่วยเรื่องอะไรดี?",
+    helpAndCommandsLabel: "Help & Commands",
+    uploadProjectLabel: "Upload project",
+    updateRepositoryLabel: "Update repository",
+    createRepositoryLabel: "Create repository",
+    viewRepositoriesLabel: "View repositories",
+    deployProjectLabel: "Deploy project",
+    redeployProjectLabel: "Redeploy project",
+    viewProjectsLabel: "View projects",
+    viewDeploymentsLabel: "View deployments",
+    backLabel: "← Back",
+    githubMenuPrompt: "อยากทำอะไรกับ GitHub ดี?",
+    vercelMenuPrompt: "อยากทำอะไรกับ Vercel ดี?",
+    helpIntro: "นี่คือสิ่งที่ Captain Harbor ช่วยได้",
+    myCapabilitiesLabel: "My capabilities",
+    commandsLabel: "Commands",
+    helpGithubText:
+      "GitHub ตอนนี้ทำได้:\n• Upload project — เริ่มอัพโหลดโปรเจกต์ (เลือกสร้างหรืออัพเดตต่อได้)\n• Update repository — ส่ง ZIP ไปอัพเดตรีโปที่มีอยู่แล้ว\n• Create repository — สร้างรีโปใหม่จาก ZIP\n• View repositories — ดูรายชื่อรีโปในบัญชีนี้",
+    helpVercelText:
+      "Vercel ตอนนี้ทำได้:\n• Deploy project — deploy รีโป GitHub ขึ้นเป็น Vercel Project ใหม่\n• Redeploy project — สั่ง deploy ล่าสุดจาก Git ให้ Project ที่มีอยู่\n• View projects — ดูรายชื่อ Vercel Project ในบัญชีนี้\n• View deployments — ดู deployment ล่าสุดของ Project ที่เลือก",
+    capabilitiesText:
+      "Captain Harbor ช่วยจัดการ GitHub กับ Vercel ของ HARBOR CARGO ได้โดยตรงในแชทนี้ — อัพโหลด/สร้าง/อัพเดตรีโป, deploy/redeploy ขึ้น Vercel, และดูรายการรีโป/โปรเจกต์/deployment พิมพ์ \"help github\" หรือ \"help vercel\" เพื่อดูรายละเอียดแยกตามบริการ",
+    commandsListText:
+      "คำสั่งที่พิมพ์ได้ตรง ๆ:\nhelp — เปิดเมนู\nhelp github / help vercel — ดูความสามารถของแต่ละบริการ\nwhat can you do — เปิดเมนู\ngithub / vercel — เปิดเมนูของบริการนั้น\nupload, deploy, redeploy, repository, repositories, deployment, deployments — คำสั่งลัด\nback — กลับเมนูก่อนหน้า\ncancel — ยกเลิกงานที่กำลังทำอยู่",
+    fallbackUnrecognized: "ตอนนี้ช่วยได้แค่ GitHub กับ Vercel ลองพิมพ์ \"help\" เพื่อดูคำสั่งที่ใช้ได้",
+    askWhichProjectForDeployments: "จะดู deployment ของ Project ไหน เลือกจากด้านล่าง หรือพิมพ์ชื่อ project มาได้เลย",
+    repositoriesListIntro: (n: number) => `เจอรีโปในบัญชีนี้ ${n} รีโป:`,
+    projectsListIntro: (n: number) => `เจอ Vercel Project ในบัญชีนี้ ${n} โปรเจกต์:`,
+    deploymentsListIntro: (name: string) => `Deployment ล่าสุดของ "${name}":`,
+    deploymentsEmpty: (name: string) => `Project "${name}" ยังไม่เคย deploy เลย`,
   },
   en: {
     greeting: "⚓ Captain Harbor is ready.\nType a service name, e.g. \"github\", or type \"help\" for the menu.",
@@ -320,6 +380,38 @@ export const cap: Record<CapLang, CapStrings> = {
     errorVercelNoGitLink: "This project isn't linked to a Git repository, so there's no branch to pull from.",
     errorVercelNoDeployment: "This project has no deployments yet — try deploying it instead.",
     installVercelAppButton: "Install Vercel GitHub App",
+
+    // ---- P3: richer home/help/menu copy ----
+    homePrompt: "What can I help you with?",
+    helpAndCommandsLabel: "Help & Commands",
+    uploadProjectLabel: "Upload project",
+    updateRepositoryLabel: "Update repository",
+    createRepositoryLabel: "Create repository",
+    viewRepositoriesLabel: "View repositories",
+    deployProjectLabel: "Deploy project",
+    redeployProjectLabel: "Redeploy project",
+    viewProjectsLabel: "View projects",
+    viewDeploymentsLabel: "View deployments",
+    backLabel: "← Back",
+    githubMenuPrompt: "What would you like to do?",
+    vercelMenuPrompt: "What would you like to do?",
+    helpIntro: "Here's what I can help you with.",
+    myCapabilitiesLabel: "My capabilities",
+    commandsLabel: "Commands",
+    helpGithubText:
+      "GitHub, right now:\n• Upload project — start an upload (choose create or update next)\n• Update repository — push a ZIP to an existing repo\n• Create repository — create a new repo from a ZIP\n• View repositories — list the repos on this account",
+    helpVercelText:
+      "Vercel, right now:\n• Deploy project — deploy a GitHub repo as a new Vercel project\n• Redeploy project — trigger a fresh deploy from Git for an existing project\n• View projects — list the Vercel projects on this account\n• View deployments — see the latest deployments for a chosen project",
+    capabilitiesText:
+      "Captain Harbor manages HARBOR CARGO's GitHub and Vercel directly from this chat — upload/create/update repos, deploy/redeploy to Vercel, and list your repos, projects, and deployments. Type \"help github\" or \"help vercel\" for details on each.",
+    commandsListText:
+      "Commands you can type directly:\nhelp — open the menu\nhelp github / help vercel — see each service's capabilities\nwhat can you do — open the menu\ngithub / vercel — open that service's menu\nupload, deploy, redeploy, repository, repositories, deployment, deployments — shortcuts\nback — go to the previous menu\ncancel — cancel work in progress",
+    fallbackUnrecognized: "I can help with GitHub and Vercel. Try \"help\" to see available commands.",
+    askWhichProjectForDeployments: "Which project's deployments do you want to see? Pick below, or type a project name.",
+    repositoriesListIntro: (n: number) => `Found ${n} repositories on this account:`,
+    projectsListIntro: (n: number) => `Found ${n} Vercel projects on this account:`,
+    deploymentsListIntro: (name: string) => `Latest deployments for "${name}":`,
+    deploymentsEmpty: (name: string) => `Project "${name}" has no deployments yet.`,
   },
 };
 
@@ -399,4 +491,57 @@ export function isCancelWord(input: string): boolean {
 
 export function isHelpWord(input: string): boolean {
   return GLOBAL_HELP_WORDS.includes(input.trim().toLowerCase());
+}
+
+// ---- P3: simple, deterministic command/intent matching for the richer
+// composer (section 6 of the brief) — no NLP model, just small word lists,
+// same spirit as isCancelWord/isHelpWord above. ----
+
+const BACK_WORDS = ["back", "← back", "ย้อนกลับ", "กลับ", "กลับเมนู"];
+
+export function isBackWord(input: string): boolean {
+  return BACK_WORDS.includes(input.trim().toLowerCase());
+}
+
+const CAPABILITIES_PHRASES = [
+  "what can you do",
+  "what can you help with",
+  "what do you do",
+  "what are you able to do",
+  "ทำอะไรได้บ้าง",
+  "ช่วยอะไรได้บ้าง",
+  "มีความสามารถอะไรบ้าง",
+];
+
+/** Loose "what can you do"-style match (section 5) — exact match or a
+ *  substring hit, since real messages are often "hey, what can you do?" */
+export function isCapabilitiesWord(input: string): boolean {
+  const v = input.trim().toLowerCase();
+  if (!v) return false;
+  return CAPABILITIES_PHRASES.some((p) => v === p || v.includes(p));
+}
+
+/** "help github" / "github help" -> "github", same for vercel. Bare "help"
+ *  is handled separately by isHelpWord (opens the root Help & Commands menu). */
+export function parseHelpTarget(input: string): Provider | null {
+  const v = input.trim().toLowerCase();
+  if (v === "help github" || v === "github help") return "github";
+  if (v === "help vercel" || v === "vercel help") return "vercel";
+  return null;
+}
+
+/** Section 6's "related words" — upload/deploy/redeploy/repository(-ies)/
+ *  deployment(s) — mapped to the matching menu action's internal token. */
+const NATURAL_COMMAND_WORDS: Record<string, string> = {
+  upload: "__gh_upload__",
+  repository: "__gh_view_repos__",
+  repositories: "__gh_view_repos__",
+  deploy: "__vc_deploy__",
+  redeploy: "__vc_redeploy__",
+  deployment: "__vc_view_deployments__",
+  deployments: "__vc_view_deployments__",
+};
+
+export function matchNaturalCommand(input: string): string | null {
+  return NATURAL_COMMAND_WORDS[input.trim().toLowerCase()] ?? null;
 }

@@ -55,6 +55,14 @@ export interface ChatMessage {
   steps?: ExecStep[];
   /** Small inline spinner row, e.g. "กำลังตรวจสอบไฟล์...". */
   pending?: boolean;
+  /**
+   * Opt-in typewriter animation for this bubble's `text` (see MessageBubble
+   * in CaptainHarbor.tsx). Defaults to off/instant — only the new
+   * conversational menu/help copy turns this on; every status, progress,
+   * error, and result message added by the existing GitHub/Vercel flow
+   * keeps rendering immediately, untouched.
+   */
+  animate?: boolean;
 }
 
 /**

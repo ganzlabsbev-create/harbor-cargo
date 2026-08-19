@@ -32,10 +32,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { usePathname } from "next/navigation";
+import Image from "next/image";
 import { upload } from "@vercel/blob/client";
 import { nanoid } from "nanoid";
 import { track } from "@vercel/analytics";
-import { Anchor, X, Paperclip, Send, Check, Loader2, ExternalLink } from "lucide-react";
+import { X, Paperclip, Send, Check, Loader2, ExternalLink } from "lucide-react";
 import { useLang } from "@/lib/i18n-context";
 import { useDragPanel } from "@/lib/use-drag-panel";
 import { useCountdown } from "@/lib/use-elapsed";
@@ -47,9 +48,12 @@ import {
   parseProvider,
   isCancelWord,
   isHelpWord,
+  isBackWord,
+  isCapabilitiesWord,
+  parseHelpTarget,
+  matchNaturalCommand,
 } from "@/lib/captain-harbor/strings";
 import {
-  KNOWN_PROVIDERS,
   LIVE_PROVIDERS,
   initialChatState,
   type Action,
@@ -203,6 +207,12 @@ export default function CaptainHarbor() {
   const composerInputRef = useRef<HTMLInputElement>(null);
   const wasClosedForFocusRef = useRef(true);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
+  // Typewriter (section 8): bumped on any user interaction with the chat
+  // (tap/click, composer typing, sending) so in-flight typewriter
+  // animations can skip straight to the full text instead of blocking
+  // the person from moving on.
+  const [interactionTick, setInteractionTick] = useState(0);
+  const bumpInteraction = useCallback(() => setInteractionTick((t) => t + 1), []);
   // Synchronous guard against double-fire (e.g. a fast double-tap on a
   // quick-reply button) that setIsBusy(true) can't catch in time, since
   // the state update isn't visible until the next render.
@@ -215,6 +225,12 @@ export default function CaptainHarbor() {
   // goToProjectPick() and the filter effect below.
   const reposCacheRef = useRef<any[]>([]);
   const projectsCacheRef = useRef<any[]>([]);
+  // Which of the two project-pick callers is currently waiting on the pick
+  // — the existing "Redeploy project" flow (goes on to await_confirm) or
+  // the new, purely read-only "View deployments" flow (goes on to list
+  // deployments and return to the Vercel menu instead). See
+  // goToProjectPick()/handleProjectPick() below.
+  const projectPickPurposeRef = useRef<"redeploy" | "view">("redeploy");
   const repoPickMsgIdRef = useRef<string | null>(null);
   const projectPickMsgIdRef = useRef<string | null>(null);
   // A page-reload resume snapshot (P1 #7), read once on mount and shown the
@@ -385,37 +401,92 @@ export default function CaptainHarbor() {
       addMsg({
         role: "bot",
         text: s.greetingWithContext(PROVIDER_LABEL[pageProvider]),
+        animate: true,
         quickReplies: [
           { label: PROVIDER_LABEL[pageProvider], value: pageProvider, tone: "primary" },
-          { label: s.helpMenu, value: "help", tone: "ghost" },
+          { label: s.helpAndCommandsLabel, value: "__help_menu__", tone: "ghost" },
         ],
       });
       setChat((c) => ({ ...c, step: "await_provider" }));
     } else {
-      addMsg({ role: "bot", text: s.greeting });
+      addMsg({ role: "bot", text: s.greeting, animate: true });
       setChat((c) => ({ ...c, step: "await_provider" }));
-      showProviderMenu();
+      showHomeMenu();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drag.panelState]);
 
-  function showProviderMenu() {
+  // ---- P3: home / GitHub menu / Vercel menu / Help & Commands -----------
+  // These only add conversational structure around the *existing* flows —
+  // every button here ultimately calls the same handleActionInput /
+  // goToRepoPick / goToProjectPick / etc. used by the original chat.
+  // Netlify/Cloudflare are intentionally left out of the home screen (still
+  // "coming soon" if reached via typed text — see handleProviderInput).
+
+  function showHomeMenu() {
     addMsg({
       role: "bot",
-      text: s.helpMenu,
-      quickReplies: KNOWN_PROVIDERS.map((p) => ({
-        label: PROVIDER_LABEL[p],
-        value: p,
-        tone: "primary" as const,
-      })),
+      text: s.homePrompt,
+      animate: true,
+      quickReplies: [
+        { label: PROVIDER_LABEL.github, value: "github", tone: "primary" },
+        { label: PROVIDER_LABEL.vercel, value: "vercel", tone: "primary" },
+        { label: s.helpAndCommandsLabel, value: "__help_menu__", tone: "ghost" },
+      ],
+    });
+  }
+
+  function showHelpMenu() {
+    addMsg({
+      role: "bot",
+      text: s.helpIntro,
+      animate: true,
+      quickReplies: [
+        { label: PROVIDER_LABEL.github, value: "github", tone: "primary" },
+        { label: PROVIDER_LABEL.vercel, value: "vercel", tone: "primary" },
+        { label: s.myCapabilitiesLabel, value: "__help_capabilities__", tone: "primary" },
+        { label: s.commandsLabel, value: "__help_commands__", tone: "primary" },
+        { label: s.backLabel, value: "__back_home__", tone: "ghost" },
+      ],
+    });
+  }
+
+  function showHelpFor(target: Provider) {
+    addMsg({
+      role: "bot",
+      text: target === "github" ? s.helpGithubText : s.helpVercelText,
+      animate: true,
+      quickReplies: [
+        { label: PROVIDER_LABEL[target], value: target, tone: "primary" },
+        { label: s.backLabel, value: "__back_home__", tone: "ghost" },
+      ],
+    });
+  }
+
+  function showCapabilities() {
+    addMsg({
+      role: "bot",
+      text: s.capabilitiesText,
+      animate: true,
+      quickReplies: [{ label: s.backLabel, value: "__back_home__", tone: "ghost" }],
+    });
+  }
+
+  function showCommandsList() {
+    addMsg({
+      role: "bot",
+      text: s.commandsListText,
+      animate: true,
+      quickReplies: [{ label: s.backLabel, value: "__back_home__", tone: "ghost" }],
     });
   }
 
   function resetToIdle(sayCancelled: boolean) {
     clearPersistedState();
     setChat(initialChatState);
+    chatRef.current = initialChatState;
     if (sayCancelled) addMsg({ role: "bot", text: s.cancelled });
-    showProviderMenu();
+    showHomeMenu();
   }
 
   /** Handles "__resume_continue__" from the page-reload resume card (P1 #7).
@@ -452,31 +523,69 @@ export default function CaptainHarbor() {
 
   // ---- provider / action selection ------------------------------------
 
+  /** Shows the expanded GitHub menu (section 3 of the brief) — every
+   *  button is a real, already-implemented action (see the __gh_*
+   *  handlers in dispatch()). */
+  function showGithubMenu() {
+    addMsg({
+      role: "bot",
+      text: s.githubMenuPrompt,
+      animate: true,
+      quickReplies: [
+        { label: s.uploadProjectLabel, value: "__gh_upload__", tone: "primary" },
+        { label: s.updateRepositoryLabel, value: "__gh_update__", tone: "primary" },
+        { label: s.createRepositoryLabel, value: "__gh_create__", tone: "primary" },
+        { label: s.viewRepositoriesLabel, value: "__gh_view_repos__", tone: "primary" },
+        { label: s.backLabel, value: "__back_home__", tone: "ghost" },
+      ],
+    });
+  }
+
+  /** Shows the expanded Vercel menu (section 4) — same idea, only actions
+   *  the Vercel API integration already supports (deploy/redeploy/list). */
+  function showVercelMenu() {
+    addMsg({
+      role: "bot",
+      text: s.vercelMenuPrompt,
+      animate: true,
+      quickReplies: [
+        { label: s.deployProjectLabel, value: "__vc_deploy__", tone: "primary" },
+        { label: s.redeployProjectLabel, value: "__vc_redeploy__", tone: "primary" },
+        { label: s.viewProjectsLabel, value: "__vc_view_projects__", tone: "primary" },
+        { label: s.viewDeploymentsLabel, value: "__vc_view_deployments__", tone: "primary" },
+        { label: s.backLabel, value: "__back_home__", tone: "ghost" },
+      ],
+    });
+  }
+
   function handleProviderInput(raw: string, sourceMsgId?: string) {
     if (sourceMsgId) resolveReplies(sourceMsgId);
     const provider = parseProvider(raw);
     if (!provider) {
       addMsg({ role: "bot", text: s.unknownProvider });
-      showProviderMenu();
+      showHomeMenu();
       return;
     }
     if (!LIVE_PROVIDERS.includes(provider)) {
       addMsg({ role: "bot", text: s.providerComingSoon(PROVIDER_LABEL[provider]) });
-      showProviderMenu();
+      showHomeMenu();
       return;
     }
     trackStep("provider_selected", { provider });
     setChat((c) => ({ ...c, provider, step: "await_action" }));
-    const id = addMsg({
-      role: "bot",
-      text: s.providerSelected(PROVIDER_LABEL[provider]),
-      quickReplies: [
-        { label: s.actionCreate, value: "create", tone: "primary" },
-        { label: s.actionUpdate, value: "update", tone: "primary" },
-        { label: s.cancel, value: "__cancel_flow__", tone: "ghost" },
-      ],
-    });
-    void id;
+    chatRef.current = { ...chatRef.current, provider, step: "await_action" };
+    if (provider === "github") showGithubMenu();
+    else showVercelMenu();
+  }
+
+  /** Sets the provider (github/vercel) then hands off to the *existing*
+   *  handleActionInput("create"|"update") — reused verbatim, so
+   *  auth checks, blob upload, diff/push, and the Vercel create/redeploy
+   *  API calls are exactly the same code path as before. */
+  async function startProviderAction(provider: Provider, action: Action) {
+    setChat((c) => ({ ...c, provider }));
+    chatRef.current = { ...chatRef.current, provider };
+    await handleActionInput(action);
   }
 
   async function handleActionInput(raw: string, sourceMsgId?: string) {
@@ -524,6 +633,130 @@ export default function CaptainHarbor() {
 
     setChat((c) => ({ ...c, action, step: "await_file", hasUnfinishedWork: true }));
     addMsg({ role: "bot", text: action === "update" ? s.askZipForUpdate : s.askZipForCreate });
+  }
+
+  /** Read-only GitHub repo listing (section 3's "View repositories") —
+   *  same /api/repos route the create/update pickers already use, just
+   *  displayed instead of used for picking. */
+  async function viewRepositories() {
+    if (isBusyRef.current) return;
+    const authed = await checkAuth();
+    if (!authed) {
+      addMsg({
+        role: "bot",
+        text: s.needLogin,
+        quickReplies: [{ label: s.loginButton, value: "__login__", tone: "primary" }],
+      });
+      return;
+    }
+    setChat((c) => ({ ...c, provider: "github", step: "await_action" }));
+    chatRef.current = { ...chatRef.current, provider: "github", step: "await_action" };
+    setBusy(true);
+    const pendingId = addMsg({ role: "bot", text: s.checkingRateLimit, pending: true });
+    try {
+      const res = await fetch("/api/repos");
+      const data = await res.json();
+      if (!data.ok) {
+        if (isSessionExpired(res.status, data)) {
+          showSessionExpired(pendingId);
+          return;
+        }
+        updateMsg(pendingId, { text: describeError(s, data.error), pending: false });
+        return;
+      }
+      const repos = Array.isArray(data.repos) ? data.repos : [];
+      if (repos.length === 0) {
+        updateMsg(pendingId, { text: s.noReposFound, pending: false });
+      } else {
+        const lines = repos.slice(0, 20).map((r: any) => `• ${r.full_name}`).join("\n");
+        updateMsg(pendingId, { text: `${s.repositoriesListIntro(repos.length)}\n${lines}`, pending: false });
+      }
+      showGithubMenu();
+    } catch {
+      updateMsg(pendingId, { text: describeError(s, null, true), pending: false });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Read-only Vercel project listing (section 4's "View projects") —
+   *  same /api/vercel/projects route the redeploy picker already uses. */
+  async function viewProjects() {
+    if (isBusyRef.current) return;
+    const authed = await checkAuth();
+    if (!authed) {
+      addMsg({
+        role: "bot",
+        text: s.needLogin,
+        quickReplies: [{ label: s.loginButton, value: "__login__", tone: "primary" }],
+      });
+      return;
+    }
+    const vercelConnected = await checkVercelConnected();
+    if (!vercelConnected) {
+      addMsg({
+        role: "bot",
+        text: s.needVercelLogin,
+        quickReplies: [{ label: s.connectVercelButton, value: "__login_vercel__", tone: "primary" }],
+      });
+      return;
+    }
+    setChat((c) => ({ ...c, provider: "vercel", step: "await_action" }));
+    chatRef.current = { ...chatRef.current, provider: "vercel", step: "await_action" };
+    setBusy(true);
+    const pendingId = addMsg({ role: "bot", text: s.checkingVercel, pending: true });
+    try {
+      const res = await fetch("/api/vercel/projects");
+      const data = await res.json();
+      if (!data.ok) {
+        if (isSessionExpired(res.status, data)) {
+          showSessionExpired(pendingId);
+          return;
+        }
+        updateMsg(pendingId, { text: describeError(s, data.error), pending: false });
+        return;
+      }
+      const projects = Array.isArray(data.projects) ? data.projects : [];
+      if (projects.length === 0) {
+        updateMsg(pendingId, { text: s.noProjectsFound, pending: false });
+      } else {
+        const lines = projects.slice(0, 20).map((p: any) => `• ${p.name}`).join("\n");
+        updateMsg(pendingId, { text: `${s.projectsListIntro(projects.length)}\n${lines}`, pending: false });
+      }
+      showVercelMenu();
+    } catch {
+      updateMsg(pendingId, { text: describeError(s, null, true), pending: false });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Kicks off the "View deployments" picker — reuses goToProjectPick()
+   *  with purpose="view" so the actual project fetch/pick code is 100%
+   *  shared with the existing "Redeploy project" flow. */
+  async function viewDeploymentsPick() {
+    if (isBusyRef.current) return;
+    const authed = await checkAuth();
+    if (!authed) {
+      addMsg({
+        role: "bot",
+        text: s.needLogin,
+        quickReplies: [{ label: s.loginButton, value: "__login__", tone: "primary" }],
+      });
+      return;
+    }
+    const vercelConnected = await checkVercelConnected();
+    if (!vercelConnected) {
+      addMsg({
+        role: "bot",
+        text: s.needVercelLogin,
+        quickReplies: [{ label: s.connectVercelButton, value: "__login_vercel__", tone: "primary" }],
+      });
+      return;
+    }
+    setChat((c) => ({ ...c, provider: "vercel", step: "await_action" }));
+    chatRef.current = { ...chatRef.current, provider: "vercel", step: "await_action" };
+    await goToProjectPick("view");
   }
 
   async function checkAuth(): Promise<boolean> {
@@ -844,7 +1077,8 @@ export default function CaptainHarbor() {
     ];
   }
 
-  async function goToProjectPick() {
+  async function goToProjectPick(purpose: "redeploy" | "view" = "redeploy") {
+    projectPickPurposeRef.current = purpose;
     setChat((c) => ({ ...c, step: "await_project_pick" }));
     const pendingId = addMsg({ role: "bot", text: s.checkingVercel, pending: true });
     setBusy(true);
@@ -866,7 +1100,7 @@ export default function CaptainHarbor() {
       projectsCacheRef.current = data.projects;
       projectPickMsgIdRef.current = pendingId;
       updateMsg(pendingId, {
-        text: s.askWhichProject,
+        text: purpose === "view" ? s.askWhichProjectForDeployments : s.askWhichProject,
         pending: false,
         quickReplies: projectQuickReplies(data.projects),
       });
@@ -889,6 +1123,15 @@ export default function CaptainHarbor() {
       return;
     }
     projectPickMsgIdRef.current = null;
+
+    // "View deployments" (new, read-only) branches off here instead of
+    // continuing into the existing redeploy-confirm flow below.
+    if (projectPickPurposeRef.current === "view") {
+      projectPickPurposeRef.current = "redeploy";
+      void showProjectDeployments(match.id, match.name);
+      return;
+    }
+
     addMsg({ role: "bot", text: s.foundRepo(match.name) });
     setChat((c) => ({ ...c, projectId: match.id, vercelProjectName: match.name, step: "await_confirm" }));
     addMsg({
@@ -899,6 +1142,43 @@ export default function CaptainHarbor() {
         { label: s.cancel, value: "__cancel_flow__", tone: "ghost" },
       ],
     });
+  }
+
+  /** Read-only deployment listing for a chosen project (section 4's "View
+   *  deployments") — calls the same GET .../deployments route the Vercel
+   *  manage page uses, then returns to the Vercel menu instead of
+   *  proceeding into redeploy/confirm. */
+  async function showProjectDeployments(projectId: string, name: string) {
+    setBusy(true);
+    const pendingId = addMsg({ role: "bot", text: s.checkingVercel, pending: true });
+    try {
+      const res = await fetch(`/api/vercel/projects/${projectId}/deployments`);
+      const data = await res.json();
+      if (!data.ok) {
+        if (isSessionExpired(res.status, data)) {
+          showSessionExpired(pendingId);
+          return;
+        }
+        updateMsg(pendingId, { text: describeError(s, data.error), pending: false });
+        return;
+      }
+      const deployments = Array.isArray(data.deployments) ? data.deployments : [];
+      if (deployments.length === 0) {
+        updateMsg(pendingId, { text: s.deploymentsEmpty(name), pending: false });
+      } else {
+        const lines = deployments
+          .slice(0, 10)
+          .map((d: any) => `• ${d.state || "?"} — ${d.url || d.id}`)
+          .join("\n");
+        updateMsg(pendingId, { text: `${s.deploymentsListIntro(name)}\n${lines}`, pending: false });
+      }
+      setChat((c) => ({ ...c, step: "await_action" }));
+      showVercelMenu();
+    } catch {
+      updateMsg(pendingId, { text: describeError(s, null, true), pending: false });
+    } finally {
+      setBusy(false);
+    }
   }
 
   // ---- vercel project naming (create flow) --------------------------------
@@ -1169,6 +1449,73 @@ export default function CaptainHarbor() {
       return;
     }
 
+    // ---- P3: home / GitHub menu / Vercel menu / Help & Commands tokens.
+    // Each of these is just navigation or a direct hand-off into an
+    // *existing* handler (handleActionInput, goToProjectPick, checkAuth,
+    // etc.) — no new business logic, no fake actions.
+    if (trimmed === "__back_home__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      setChat((c) => ({ ...c, step: "await_provider", provider: null, action: null }));
+      chatRef.current = { ...chatRef.current, step: "await_provider", provider: null, action: null };
+      showHomeMenu();
+      return;
+    }
+    if (trimmed === "__help_menu__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      showHelpMenu();
+      return;
+    }
+    if (trimmed === "__help_capabilities__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      showCapabilities();
+      return;
+    }
+    if (trimmed === "__help_commands__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      showCommandsList();
+      return;
+    }
+    if (trimmed === "__gh_upload__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      handleProviderInput("github");
+      return;
+    }
+    if (trimmed === "__gh_update__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      await startProviderAction("github", "update");
+      return;
+    }
+    if (trimmed === "__gh_create__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      await startProviderAction("github", "create");
+      return;
+    }
+    if (trimmed === "__gh_view_repos__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      await viewRepositories();
+      return;
+    }
+    if (trimmed === "__vc_deploy__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      await startProviderAction("vercel", "create");
+      return;
+    }
+    if (trimmed === "__vc_redeploy__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      await startProviderAction("vercel", "update");
+      return;
+    }
+    if (trimmed === "__vc_view_projects__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      await viewProjects();
+      return;
+    }
+    if (trimmed === "__vc_view_deployments__") {
+      if (sourceMsgId) resolveReplies(sourceMsgId);
+      await viewDeploymentsPick();
+      return;
+    }
+
     addMsg({ role: "user", text: trimmed === "cancel" ? s.cancel : trimmed });
 
     // Global commands work from any step.
@@ -1177,8 +1524,56 @@ export default function CaptainHarbor() {
       return;
     }
     if (isHelpWord(trimmed)) {
-      showProviderMenu();
+      showHelpMenu();
       return;
+    }
+    // "help github" / "help vercel" and "what can you do"-style phrasing
+    // also work everywhere — they're purely informational and never touch
+    // chat.step, so they can't clobber an in-progress upload/deploy.
+    const helpTarget = parseHelpTarget(trimmed);
+    if (helpTarget) {
+      showHelpFor(helpTarget);
+      return;
+    }
+    if (isCapabilitiesWord(trimmed)) {
+      showHelpMenu();
+      return;
+    }
+
+    // Section 6's remaining natural-language commands (back, github,
+    // vercel, and the upload/deploy/redeploy/repository(-ies)/
+    // deployment(s) shortcuts) only apply at the top-level, non-active-
+    // workflow steps — deep inside an actual upload/deploy (await_file,
+    // await_repo_pick, await_repo_name, await_confirm, executing,
+    // await_project_pick, await_project_name) input keeps being handled
+    // exactly as before, unmodified, so free-text repo/project names or
+    // in-flight state is never hijacked.
+    const NAV_SAFE_STEPS: ChatState["step"][] = ["idle", "await_provider", "await_action", "done"];
+    const FALLBACK_STEPS: ChatState["step"][] = ["idle", "await_provider", "done"];
+    if (NAV_SAFE_STEPS.includes(chat.step)) {
+      if (isBackWord(trimmed)) {
+        await dispatch("__back_home__");
+        return;
+      }
+      const nat = matchNaturalCommand(trimmed);
+      if (nat) {
+        await dispatch(nat);
+        return;
+      }
+      const provider = parseProvider(trimmed);
+      if (provider) {
+        handleProviderInput(trimmed);
+        return;
+      }
+      if (FALLBACK_STEPS.includes(chat.step)) {
+        addMsg({
+          role: "bot",
+          text: s.fallbackUnrecognized,
+          animate: true,
+          quickReplies: [{ label: s.helpAndCommandsLabel, value: "__help_menu__", tone: "ghost" }],
+        });
+        return;
+      }
     }
 
     switch (chat.step) {
@@ -1229,11 +1624,13 @@ export default function CaptainHarbor() {
 
   function onQuickReply(msgId: string, qr: QuickReply) {
     if (isBusyRef.current) return;
+    bumpInteraction();
     void dispatch(qr.value, msgId);
   }
 
   function onSend() {
     if (isBusyRef.current) return;
+    bumpInteraction();
     const text = input;
     setInput("");
     void dispatch(text);
@@ -1250,7 +1647,7 @@ export default function CaptainHarbor() {
           aria-label="Captain Harbor"
           className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-harbor-navy text-harbor-mist shadow-glow-blue"
         >
-          <Anchor size={24} strokeWidth={2} />
+          <Image src="/captain-harbor.svg" alt="Captain Harbor" width={30} height={30} priority unoptimized />
           {chat.hasUnfinishedWork && chat.step !== "done" && (
             <span className="absolute right-0 top-0 h-3.5 w-3.5 rounded-full border-2 border-base-bg bg-harbor-orange" />
           )}
@@ -1281,7 +1678,7 @@ export default function CaptainHarbor() {
             {drag.panelState !== "collapsed" && (
               <div className="flex w-full items-center justify-between px-4">
                 <div className="flex items-center gap-1.5 text-sm font-medium text-ink">
-                  <Anchor size={15} strokeWidth={2} className="text-harbor-orange" />
+                  <Image src="/captain-harbor.svg" alt="" width={16} height={16} unoptimized />
                   Captain Harbor
                 </div>
                 <button
@@ -1305,6 +1702,7 @@ export default function CaptainHarbor() {
                 onDragOver={onChatDragOver}
                 onDragLeave={onChatDragLeave}
                 onDrop={onChatDrop}
+                onPointerDown={bumpInteraction}
                 className="relative min-h-0 flex-1 overflow-y-auto px-4 pb-2"
               >
                 {messages.map((m) => (
@@ -1313,6 +1711,7 @@ export default function CaptainHarbor() {
                     msg={m}
                     lang={lang}
                     disabled={isBusy}
+                    skipSignal={interactionTick}
                     onQuickReply={(qr) => onQuickReply(m.id, qr)}
                   />
                 ))}
@@ -1342,7 +1741,10 @@ export default function CaptainHarbor() {
                   <input
                     ref={composerInputRef}
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={(e) => {
+                      setInput(e.target.value);
+                      bumpInteraction();
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") onSend();
                     }}
@@ -1372,19 +1774,86 @@ function MessageBubble({
   msg,
   lang,
   disabled,
+  skipSignal,
   onQuickReply,
 }: {
   msg: ChatMessage;
   lang: "th" | "en";
   disabled?: boolean;
+  skipSignal?: number;
   onQuickReply: (qr: QuickReply) => void;
 }) {
   const isUser = msg.role === "user";
+
+  // Typewriter effect (section 8) — opt-in via msg.animate, and never for
+  // pending/steps bubbles (those are live status, not conversational copy;
+  // see the `animate: true` call sites in CaptainHarbor for what actually
+  // gets this treatment: home/help/GitHub-menu/Vercel-menu copy only).
+  const shouldAnimate = !isUser && Boolean(msg.animate) && !msg.pending && !msg.steps;
+  const fullText = msg.text || "";
+  const [shownLength, setShownLength] = useState(shouldAnimate ? 0 : fullText.length);
+  const [animDone, setAnimDone] = useState(!shouldAnimate);
+  const mountSkipSignalRef = useRef(skipSignal);
+
+  useEffect(() => {
+    if (!shouldAnimate) {
+      setShownLength(fullText.length);
+      setAnimDone(true);
+      return;
+    }
+    let cancelled = false;
+    let timer: number | undefined;
+    setShownLength(0);
+    setAnimDone(false);
+    // Small delay before typing starts (section 9) so it reads as "about
+    // to reply" rather than robotic instant character-spam.
+    const startTimer = window.setTimeout(() => {
+      let i = 0;
+      const step = () => {
+        if (cancelled) return;
+        i += 1;
+        setShownLength(i);
+        if (i >= fullText.length) {
+          setAnimDone(true);
+          return;
+        }
+        timer = window.setTimeout(step, 18);
+      };
+      step();
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(startTimer);
+      if (timer) window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullText, shouldAnimate]);
+
+  // Any interaction anywhere in the chat (tap, type, send, quick-reply)
+  // after this bubble mounted skips straight to the full text — never
+  // mid-character, and never re-triggered by state elsewhere in the chat
+  // (this only reads shownLength/fullText local to this bubble).
+  useEffect(() => {
+    if (shouldAnimate && !animDone && skipSignal !== undefined && skipSignal !== mountSkipSignalRef.current) {
+      setShownLength(fullText.length);
+      setAnimDone(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skipSignal]);
+
+  const displayText = shouldAnimate ? fullText.slice(0, shownLength) : fullText;
+
   return (
     <div className={`mt-3 flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div className={`max-w-[85%] ${isUser ? "" : "w-full"}`}>
         {msg.text && (
           <div
+            onClick={() => {
+              if (shouldAnimate && !animDone) {
+                setShownLength(fullText.length);
+                setAnimDone(true);
+              }
+            }}
             className={`whitespace-pre-line rounded-2xl px-3.5 py-2.5 text-sm ${
               isUser
                 ? "bg-harbor-blue text-white"
@@ -1394,7 +1863,7 @@ function MessageBubble({
             {msg.pending && (
               <Loader2 size={14} strokeWidth={2} className="mr-1.5 inline-block animate-spin align-[-2px] text-ink-faint" />
             )}
-            {msg.text}
+            {displayText}
           </div>
         )}
 
