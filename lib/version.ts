@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.17.0";
+export const APP_VERSION = "0.18.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.18.0",
+    date: "2026-08",
+    notes: [
+      "Harbor Preview: added a Network tab that shows every image/script/stylesheet, fetch(), and XHR request a static preview makes, with pass/fail status — not available yet in Dev Server mode.",
+      "Harbor Preview: tapping a 'file.js:12' location in a Console error now jumps straight to that line in the Files tab.",
+      "Harbor Preview: the Files tab is now a real source viewer — tap any file to read it with line numbers, instead of just seeing names in a tree.",
+      "Harbor Preview: added viewport presets (Phone, Large Phone, Tablet, Laptop, plus the original fill-the-frame view) with a rotate button, so you can check a static preview at different screen sizes without leaving the page.",
+    ],
+  },
   {
     version: "0.17.0",
     date: "2026-08",
