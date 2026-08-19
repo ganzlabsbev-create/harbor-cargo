@@ -11,11 +11,10 @@ export default function ToolGrid() {
   const { t } = useLang();
   const tools = [
     {
-      href: "/tools/preview",
+      href: "/tools/harbor",
       icon: <Image src="/harbor-preview.svg" alt="" width={28} height={28} unoptimized />,
-      title: t("tool_preview_title"),
-      description: t("tool_preview_desc"),
-      badge: "DEMO",
+      title: t("tool_harbor_title"),
+      description: t("tool_harbor_desc"),
     },
     {
       href: "/tools/github",

@@ -282,7 +282,7 @@ export default function PreviewPage() {
     <main className="min-h-dvh bg-base-bg pb-16">
       <Header />
       <div className="mx-auto max-w-2xl px-4 py-6">
-        <Link href="/" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-dim">
+        <Link href="/tools/harbor" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-dim">
           <ChevronLeft size={16} /> {t("back")}
         </Link>
 
