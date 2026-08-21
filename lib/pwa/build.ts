@@ -176,6 +176,10 @@ async function runHtmlShell(ctx: Ctx): Promise<string[]> {
 
   // Next.js Pages Router without a custom pages/_document.tsx: synthesize a
   // minimal one first, then treat it exactly like any other html-shell.
+  // wasEntrySynthesized must be captured from the *original* project state
+  // (before this write) — checking byPath.has(entryPath) later would always
+  // find it "existing" since the boilerplate has already been put() there.
+  const wasEntrySynthesized = !!analysis.entryHtmlNeedsCreate;
   if (analysis.entryHtmlNeedsCreate) {
     const boilerplate = `import { Html, Head, Main, NextScript } from "next/document";
 
@@ -280,7 +284,13 @@ export default function Document() {
   });
   if (result.changed) {
     put(entryPath, enc.encode(result.html));
-    ctx.recordPlan(entryPath, "UPDATE", "PWA <head> tags/registration script injected");
+    ctx.recordPlan(
+      entryPath,
+      wasEntrySynthesized ? "CREATE" : "UPDATE",
+      wasEntrySynthesized
+        ? "pages/_document.tsx did not exist — synthesized it and injected PWA <head> tags/registration script"
+        : "PWA <head> tags/registration script injected"
+    );
   } else if (result.notes.includes("no_head_tag")) {
     manualSteps.push("html_shell_no_head_found");
     ctx.recordPlan(entryPath, "WARNING", "no safe <head> insertion point found — left untouched");
@@ -348,7 +358,9 @@ async function runNextAppRouter(ctx: Ctx): Promise<string[]> {
     ctx.recordPlan("public/service-worker.js", existedSw ? "UPDATE" : "CREATE", existedSw ? "existing Service Worker found, user chose Replace" : "no active Service Worker detected");
 
     const componentPath = `${layoutDir}harbor-register-sw.tsx`;
+    const existedComponent = byPath.has(componentPath);
     put(componentPath, enc.encode(generateRegisterSwComponent(resolvePublicPath("/", "service-worker.js"))));
+    ctx.recordPlan(componentPath, existedComponent ? "UPDATE" : "CREATE", "Service Worker registration component");
 
     const layoutFile = byPath.get(layoutPath)!;
     const layoutText = dec.decode(layoutFile.bytes);
@@ -422,7 +434,10 @@ async function runNuxt3(ctx: Ctx): Promise<string[]> {
     const existedSw = byPath.has("public/service-worker.js");
     put("public/service-worker.js", enc.encode(generateServiceWorkerSource(version)));
     ctx.recordPlan("public/service-worker.js", existedSw ? "UPDATE" : "CREATE", existedSw ? "existing Service Worker found, user chose Replace" : "no active Service Worker detected");
-    put("plugins/harbor-pwa-sw.client.ts", enc.encode(generateNuxtSwPlugin(resolvePublicPath("/", "service-worker.js"))));
+    const nuxtSwPluginPath = "plugins/harbor-pwa-sw.client.ts";
+    const existedNuxtSwPlugin = byPath.has(nuxtSwPluginPath);
+    put(nuxtSwPluginPath, enc.encode(generateNuxtSwPlugin(resolvePublicPath("/", "service-worker.js"))));
+    ctx.recordPlan(nuxtSwPluginPath, existedNuxtSwPlugin ? "UPDATE" : "CREATE", "Nuxt client plugin for Service Worker registration");
   } else if (analysis.existingServiceWorkerPath) {
     ctx.recordPlan(analysis.existingServiceWorkerPath, "PRESERVE", "existing Service Worker found, keeping by default");
   }
