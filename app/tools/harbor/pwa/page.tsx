@@ -12,17 +12,53 @@ import {
   RotateCcw,
   Download,
   ImagePlus,
+  ChevronDown,
+  ChevronRight,
+  Info,
 } from "lucide-react";
 import Header from "@/components/Header";
 import { useLang } from "@/lib/i18n-context";
 import { extractZipClient, type ClientFile } from "@/lib/client-zip";
 import { analyzeProject, formatBytes } from "@/lib/pwa/analyze";
 import { generatePwaPackage, downloadBlob } from "@/lib/pwa/build";
-import { PwaValidationError } from "@/lib/pwa/validate";
+import { PwaValidationError, type ValidationResult } from "@/lib/pwa/validate";
 import { loadIconFromFile, isAcceptedIconFile } from "@/lib/pwa/icons";
-import type { ProjectAnalysis, PwaFormState, GenerateStep, DisplayMode } from "@/lib/pwa/types";
+import type { ProjectAnalysis, PwaFormState, GenerateStep, DisplayMode, ValidationIssue } from "@/lib/pwa/types";
 
-type Phase = "select" | "loaded" | "generating" | "done";
+type Phase = "select" | "loaded" | "generating" | "done" | "error";
+
+// §UX pass: known OutputValidator codes get a humanized i18n key
+// ("pwa_issue_<code>"); anything unrecognized falls back to a generic
+// message so a brand-new code never leaks a raw string to the user.
+const KNOWN_ISSUE_CODES = new Set([
+  "manifest_missing",
+  "manifest_undecodable",
+  "manifest_invalid_json",
+  "manifest_not_object",
+  "manifest_bad_field_type",
+  "manifest_icons_not_array",
+  "manifest_icon_malformed",
+  "manifest_icon_missing_src",
+  "manifest_icon_missing_file",
+  "sw_registration_target_missing",
+  "duplicate_manifest_link",
+  "duplicate_sw_registration",
+  "unsafe_path",
+  "case_collision",
+  "planned_write_missing",
+  "unplanned_create",
+  "unplanned_update",
+  "plan_mismatch",
+  "preserve_violated",
+  "skip_violated",
+  "planned_create_missing",
+  "planned_update_missing",
+]);
+
+function issueMessage(issue: ValidationIssue, t: (k: any) => string): string {
+  const key = KNOWN_ISSUE_CODES.has(issue.code) ? "pwa_issue_" + issue.code : "pwa_issue_generic";
+  return t(key as any);
+}
 
 interface LoadedIconState {
   image: HTMLImageElement;
@@ -73,6 +109,9 @@ export default function HarborPwaPage() {
 
   const [genStep, setGenStep] = useState<GenerateStep | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
+  const [genValidation, setGenValidation] = useState<ValidationResult | null>(null);
+  const [showTechDetails, setShowTechDetails] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [result, setResult] = useState<{ zipBlob: Blob; added: string[]; updated: string[]; unchanged: string[]; manualSteps: string[] } | null>(null);
 
   const zipInputRef = useRef<HTMLInputElement>(null);
@@ -154,6 +193,9 @@ export default function HarborPwaPage() {
     setIconError(null);
     setGenStep(null);
     setGenError(null);
+    setGenValidation(null);
+    setShowTechDetails(false);
+    setShowAdvanced(false);
     setResult(null);
   }
 
@@ -167,6 +209,8 @@ export default function HarborPwaPage() {
   async function handleGenerate() {
     if (!files || !analysis || !form || !icon) return;
     setGenError(null);
+    setGenValidation(null);
+    setShowTechDetails(false);
     setPhase("generating");
     try {
       const res = await generatePwaPackage({
@@ -179,12 +223,20 @@ export default function HarborPwaPage() {
       setResult(res);
       setPhase("done");
     } catch (e) {
-      // §15: don't collapse every failure into the same generic message —
-      // OutputValidator rejections are a known, expected outcome (Harbor
-      // chose not to ship a bad ZIP), not an unexpected crash, and the
-      // original project was never touched in that case.
-      setGenError(e instanceof PwaValidationError ? t("pwa_error_generation_validation_failed") : t("pwa_error_invalid_zip"));
-      setPhase("loaded");
+      // §15 / §UX pass: don't collapse every failure into the same generic
+      // message — OutputValidator rejections are a known, expected outcome
+      // (Harbor chose not to ship a bad ZIP), not an unexpected crash, and
+      // the original project was never touched in that case. Surface the
+      // real detail (what broke, which file, why) right here — never bounce
+      // the person back to a blank upload screen; `form`/`analysis`/`files`
+      // are untouched, so "back to settings" just re-shows this same
+      // filled-in page.
+      if (e instanceof PwaValidationError) {
+        setGenValidation(e.result);
+      } else {
+        setGenError(t("pwa_generation_failed_generic"));
+      }
+      setPhase("error");
     }
   }
 
@@ -278,60 +330,11 @@ export default function HarborPwaPage() {
 
             <StatusCard analysis={analysis} t={t} />
 
-            <Section title={t("pwa_section_identity")}>
-              <Field label={t("pwa_app_name_label")}>
-                <input
-                  value={form.appName}
-                  onChange={(e) => updateForm({ appName: e.target.value })}
-                  placeholder={t("pwa_app_name_placeholder")}
-                  className={inputClass}
-                />
-              </Field>
-              <Field label={t("pwa_short_name_label")}>
-                <input
-                  value={form.shortName}
-                  onChange={(e) => updateForm({ shortName: e.target.value.slice(0, 12) })}
-                  placeholder={t("pwa_short_name_placeholder")}
-                  className={inputClass}
-                  maxLength={12}
-                />
-              </Field>
-              <Field label={t("pwa_description_label")}>
-                <input
-                  value={form.description}
-                  onChange={(e) => updateForm({ description: e.target.value })}
-                  placeholder={t("pwa_description_placeholder")}
-                  className={inputClass}
-                />
-              </Field>
-              <Field label={t("pwa_start_url_label")}>
-                <input value={form.startUrl} onChange={(e) => updateForm({ startUrl: e.target.value })} className={inputClass} />
-              </Field>
-            </Section>
-
-            <Section title={t("pwa_section_appearance")}>
-              <div className="flex flex-col gap-3">
-                <Field label={t("pwa_theme_color_label")}>
-                  <ColorInput value={form.themeColor} onChange={(v) => updateForm({ themeColor: v })} />
-                </Field>
-                <Field label={t("pwa_bg_color_label")}>
-                  <ColorInput value={form.backgroundColor} onChange={(v) => updateForm({ backgroundColor: v })} />
-                </Field>
-              </div>
-              <Field label={t("pwa_display_mode_label")}>
-                <select
-                  value={form.display}
-                  onChange={(e) => updateForm({ display: e.target.value as DisplayMode })}
-                  className={inputClass}
-                >
-                  {(["standalone", "fullscreen", "minimal-ui", "browser"] as DisplayMode[]).map((mode) => (
-                    <option key={mode} value={mode}>
-                      {t(`pwa_display_${mode.replace("-", "_")}` as any)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </Section>
+            {/* §UX pass: when Harbor had more than one candidate to choose
+                from (manifest / Service Worker / entry HTML), say so and
+                name the one it picked — the person never has to choose
+                manually unless nothing could be picked safely. */}
+            <AutoSelectNotes analysis={analysis} files={files} t={t} />
 
             <Section title={t("pwa_section_icon")}>
               <div className="flex items-center gap-4">
@@ -371,35 +374,112 @@ export default function HarborPwaPage() {
               {iconError && <p className="text-xs text-accent-red">{iconError}</p>}
             </Section>
 
-            {analysis.existingManifestPath && (
-              <ToggleCard
-                title={t("pwa_existing_manifest_detected")}
-                keepLabel={t("pwa_keep_manifest")}
-                replaceLabel={t("pwa_replace_manifest")}
-                value={form.replaceManifest}
-                onChange={(v) => updateForm({ replaceManifest: v })}
-              />
-            )}
-            {analysis.existingServiceWorkerPath && (
-              <ToggleCard
-                title={t("pwa_existing_sw_detected")}
-                keepLabel={t("pwa_keep_sw")}
-                replaceLabel={t("pwa_replace_sw")}
-                value={form.replaceServiceWorker}
-                onChange={(v) => updateForm({ replaceServiceWorker: v })}
-              />
-            )}
-            {analysis.hasIcons && (
-              <ToggleCard
-                title={t("pwa_existing_icons_detected")}
-                keepLabel={t("pwa_keep_icons")}
-                replaceLabel={t("pwa_replace_icons")}
-                value={form.replaceIcons}
-                onChange={(v) => updateForm({ replaceIcons: v })}
-              />
-            )}
+            {/* §UX pass: everything below is already set to Harbor's
+                recommended defaults — tucked behind "Advanced settings" so
+                the default path is just zip → icon → Generate. */}
+            <div className="rounded-2xl border border-base-border bg-base-surface shadow-card">
+              <button
+                onClick={() => setShowAdvanced((v) => !v)}
+                className="flex w-full items-center justify-between gap-2 px-4 py-3.5 text-left"
+              >
+                <span className="flex flex-col gap-0.5">
+                  <span className="font-display text-sm font-semibold text-ink">{t("pwa_advanced_settings_title")}</span>
+                  <span className="text-[11px] text-ink-faint">{t("pwa_advanced_settings_hint")}</span>
+                </span>
+                {showAdvanced ? (
+                  <ChevronDown size={18} className="shrink-0 text-ink-faint" />
+                ) : (
+                  <ChevronRight size={18} className="shrink-0 text-ink-faint" />
+                )}
+              </button>
 
-            {genError && <p className="text-sm text-accent-red">{genError}</p>}
+              {showAdvanced && (
+                <div className="flex flex-col gap-4 border-t border-base-border p-4">
+                  <Section title={t("pwa_section_identity")}>
+                    <Field label={t("pwa_app_name_label")}>
+                      <input
+                        value={form.appName}
+                        onChange={(e) => updateForm({ appName: e.target.value })}
+                        placeholder={t("pwa_app_name_placeholder")}
+                        className={inputClass}
+                      />
+                    </Field>
+                    <Field label={t("pwa_short_name_label")}>
+                      <input
+                        value={form.shortName}
+                        onChange={(e) => updateForm({ shortName: e.target.value.slice(0, 12) })}
+                        placeholder={t("pwa_short_name_placeholder")}
+                        className={inputClass}
+                        maxLength={12}
+                      />
+                    </Field>
+                    <Field label={t("pwa_description_label")}>
+                      <input
+                        value={form.description}
+                        onChange={(e) => updateForm({ description: e.target.value })}
+                        placeholder={t("pwa_description_placeholder")}
+                        className={inputClass}
+                      />
+                    </Field>
+                    <Field label={t("pwa_start_url_label")}>
+                      <input value={form.startUrl} onChange={(e) => updateForm({ startUrl: e.target.value })} className={inputClass} />
+                    </Field>
+                  </Section>
+
+                  <Section title={t("pwa_section_appearance")}>
+                    <div className="flex flex-col gap-3">
+                      <Field label={t("pwa_theme_color_label")}>
+                        <ColorInput value={form.themeColor} onChange={(v) => updateForm({ themeColor: v })} />
+                      </Field>
+                      <Field label={t("pwa_bg_color_label")}>
+                        <ColorInput value={form.backgroundColor} onChange={(v) => updateForm({ backgroundColor: v })} />
+                      </Field>
+                    </div>
+                    <Field label={t("pwa_display_mode_label")}>
+                      <select
+                        value={form.display}
+                        onChange={(e) => updateForm({ display: e.target.value as DisplayMode })}
+                        className={inputClass}
+                      >
+                        {(["standalone", "fullscreen", "minimal-ui", "browser"] as DisplayMode[]).map((mode) => (
+                          <option key={mode} value={mode}>
+                            {t(`pwa_display_${mode.replace("-", "_")}` as any)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </Section>
+
+                  {analysis.existingManifestPath && (
+                    <ToggleCard
+                      title={t("pwa_existing_manifest_detected")}
+                      keepLabel={t("pwa_keep_manifest")}
+                      replaceLabel={t("pwa_replace_manifest")}
+                      value={form.replaceManifest}
+                      onChange={(v) => updateForm({ replaceManifest: v })}
+                    />
+                  )}
+                  {analysis.existingServiceWorkerPath && (
+                    <ToggleCard
+                      title={t("pwa_existing_sw_detected")}
+                      keepLabel={t("pwa_keep_sw")}
+                      replaceLabel={t("pwa_replace_sw")}
+                      value={form.replaceServiceWorker}
+                      onChange={(v) => updateForm({ replaceServiceWorker: v })}
+                    />
+                  )}
+                  {analysis.hasIcons && (
+                    <ToggleCard
+                      title={t("pwa_existing_icons_detected")}
+                      keepLabel={t("pwa_keep_icons")}
+                      replaceLabel={t("pwa_replace_icons")}
+                      value={form.replaceIcons}
+                      onChange={(v) => updateForm({ replaceIcons: v })}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
 
             <button
               onClick={handleGenerate}
@@ -433,6 +513,82 @@ export default function HarborPwaPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {phase === "error" && (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 rounded-2xl border border-accent-red/30 bg-accent-red/5 p-5">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-red/10 text-accent-red">
+                  <X size={18} />
+                </div>
+                <div>
+                  <p className="font-display text-base font-semibold text-ink">{t("pwa_generation_failed_title")}</p>
+                  <p className="text-xs text-ink-dim">{t("pwa_generation_failed_subtitle")}</p>
+                </div>
+              </div>
+
+              {genValidation && genValidation.errors.length > 0 && (
+                <div className="flex flex-col gap-2.5">
+                  {genValidation.errors.map((issue, i) => (
+                    <div key={i} className="rounded-xl border border-accent-red/20 bg-base-surface p-3">
+                      <p className="text-xs font-medium text-ink">
+                        <span className="text-accent-red">{t("pwa_issue_found_label")}:</span> {issueMessage(issue, t)}
+                      </p>
+                      {issue.path && (
+                        <p className="mt-1 truncate font-mono text-[11px] text-ink-faint">
+                          {t("pwa_issue_file_label")}: &quot;{issue.path}&quot;
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {genError && !genValidation && <p className="text-xs text-ink-dim">{genError}</p>}
+
+              <p className="text-xs font-medium text-ink-dim">{t("pwa_original_project_untouched")}</p>
+
+              {genValidation && genValidation.errors.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setShowTechDetails((v) => !v)}
+                    className="flex items-center gap-1 text-[11px] font-medium text-ink-faint underline decoration-dotted underline-offset-2"
+                  >
+                    {showTechDetails ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    {t("pwa_technical_details_toggle")}
+                  </button>
+                  {showTechDetails && (
+                    <div className="mt-2 flex flex-col gap-1 rounded-lg bg-base-surface2 p-3 font-mono text-[10px] text-ink-faint">
+                      {genValidation.errors.map((issue, i) => (
+                        <div key={i}>
+                          [{issue.severity}] {issue.code}
+                          {issue.path ? ` — ${issue.path}` : ""}
+                          {": "}
+                          {issue.detail}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={handleGenerate}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-harbor-blue px-4 py-2.5 text-sm font-display font-semibold text-white shadow-glow-blue active:scale-[0.99]"
+                >
+                  <RotateCcw size={15} /> {t("pwa_retry_button")}
+                </button>
+                <button
+                  onClick={() => setPhase("loaded")}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-base-border bg-base-surface2 px-4 py-2.5 text-sm font-medium text-ink-dim active:scale-[0.99]"
+                >
+                  {t("pwa_back_to_settings_button")}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -580,6 +736,60 @@ function StatusCard({ analysis, t }: { analysis: ProjectAnalysis; t: (k: any) =>
         <StatusRow label={t("pwa_status_sw")} ok={!!analysis.existingServiceWorkerPath} />
         <StatusRow label={t("pwa_status_html")} ok={analysis.strategy !== "unsupported"} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * §UX pass, item 3: Harbor already auto-selects the manifest / Service
+ * Worker / entry HTML it uses (see detectManifest / detectServiceWorker /
+ * analyzeProject) — this only makes that decision visible when there was
+ * more than one real candidate to choose between, so the person understands
+ * why file X was picked instead of being asked to pick it themselves.
+ */
+function AutoSelectNotes({ analysis, files, t }: { analysis: ProjectAnalysis; files: ClientFile[] | null; t: (k: any) => string }) {
+  const notes: { key: string; text: string }[] = [];
+
+  const manifestCandidates = analysis.existingManifest.candidates.filter((c) => c.confidence !== "low");
+  if (analysis.existingManifestPath && manifestCandidates.length > 1) {
+    notes.push({
+      key: "manifest",
+      text: t("pwa_auto_selected_manifest")
+        .replace("{count}", String(manifestCandidates.length))
+        .replace("{path}", analysis.existingManifestPath),
+    });
+  }
+
+  const swCandidates = analysis.existingServiceWorker.candidates.filter(
+    (c) => c.confidence !== "low" && c.sourceType !== "generator-source"
+  );
+  if (analysis.existingServiceWorkerPath && swCandidates.length > 1) {
+    notes.push({
+      key: "sw",
+      text: t("pwa_auto_selected_sw")
+        .replace("{count}", String(swCandidates.length))
+        .replace("{path}", analysis.existingServiceWorkerPath),
+    });
+  }
+
+  const htmlCount = files ? files.filter((f) => f.ext === "html").length : 0;
+  if (analysis.entryHtmlPath && !analysis.entryHtmlNeedsCreate && htmlCount > 1) {
+    notes.push({
+      key: "entry",
+      text: t("pwa_auto_selected_entry_html").replace("{count}", String(htmlCount)).replace("{path}", analysis.entryHtmlPath),
+    });
+  }
+
+  if (notes.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {notes.map((n) => (
+        <div key={n.key} className="flex items-start gap-2 rounded-xl border border-harbor-blue/20 bg-harbor-blue/5 px-3 py-2.5 text-xs text-ink-dim">
+          <Info size={14} className="mt-0.5 shrink-0 text-harbor-blue" />
+          <span>{n.text}</span>
+        </div>
+      ))}
     </div>
   );
 }
