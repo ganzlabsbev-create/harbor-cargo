@@ -293,6 +293,7 @@ export const dict = {
     pwa_manual_next_layout_manual_sw_mount: "ไม่พบ </body> ใน app/layout.tsx — ต้อง import และ mount HarborRegisterSW เองในไฟล์นี้",
     pwa_manual_nuxt_head_already_patched: "nuxt.config มี head ของ Harbor PWA อยู่แล้ว ไม่ได้แก้ซ้ำ",
     pwa_manual_nuxt_config_manual_head: "รูปแบบ nuxt.config ไม่ตรงกับที่คาดไว้ (defineNuxtConfig({...})) — ต้องเพิ่ม app.head เองตาม manifest/icon ที่สร้างไว้ใน public/",
+    pwa_manual_middleware_no_public_path_list_found: "พบ middleware.ts ที่ทำ auth-gate ในโปรเจกต์ปลายทาง แต่หา public-path allowlist ไม่เจอโดยอัตโนมัติ — ต้องเพิ่ม path ของ manifest/service worker เข้าไปเองเพื่อไม่ให้ auth บล็อกการเช็ค installability ของ PWA",
 
     // §UX pass: advanced settings section
     pwa_advanced_settings_title: "การตั้งค่าขั้นสูง",
@@ -677,6 +678,7 @@ export const dict = {
     pwa_manual_next_layout_manual_sw_mount: "No </body> found in app/layout.tsx — import and mount HarborRegisterSW there yourself.",
     pwa_manual_nuxt_head_already_patched: "nuxt.config already has Harbor PWA's head block — left untouched.",
     pwa_manual_nuxt_config_manual_head: "nuxt.config's shape didn't match what was expected (defineNuxtConfig({...})) — add app.head yourself, pointing at the manifest/icons generated under public/.",
+    pwa_manual_middleware_no_public_path_list_found: "Found an auth-gate middleware.ts in the target project, but couldn't identify its public-path allowlist automatically — add the manifest/service-worker paths to it yourself so the auth gate doesn't block PWA installability checks.",
 
     // §UX pass: advanced settings section
     pwa_advanced_settings_title: "Advanced settings",

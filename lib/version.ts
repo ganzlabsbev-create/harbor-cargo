@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.20.0";
+export const APP_VERSION = "0.21.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.21.0",
+    date: "2026-08",
+    notes: [
+      "Harbor PWA: if the target project has its own middleware.ts doing an auth gate over every route, the generated manifest and service worker are now automatically added to its existing public-path allowlist — previously they could get redirected to /login, which permanently blocks Chrome's PWA install-eligibility check even after logging in. Works generically against whatever allowlist shape the project already uses, not just Harbor Cargo's own pattern; if none can be identified automatically, it's now listed as a manual step instead of being silently skipped.",
+    ],
+  },
   {
     version: "0.20.0",
     date: "2026-08",

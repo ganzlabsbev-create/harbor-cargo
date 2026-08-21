@@ -1,5 +1,5 @@
 import type { ClientFile } from "@/lib/client-zip";
-import type { ProjectAnalysis, PwaFormState, GenerateResult, GenerateStep, MutationPlanEntry } from "./types";
+import type { ProjectAnalysis, PwaFormState, GenerateResult, GenerateStep, MutationPlanEntry, PwaStrategy } from "./types";
 import { buildManifest, serializeManifest, type ManifestIconSpec } from "./manifest";
 import { injectPwaHtml } from "./html";
 import { generateServiceWorkerSource, generateRegistrationSnippet } from "./service-worker";
@@ -8,6 +8,8 @@ import { generateNextManifestTs, generateRegisterSwComponent, patchNextLayoutFor
 import { patchNuxtConfigHead, generateNuxtSwPlugin } from "./nuxt";
 import { resolvePublicPath } from "./detect/base-path";
 import { validateOutput, PwaValidationError } from "./validate";
+import { findMiddlewarePath } from "./detect/middleware-detect";
+import { patchMiddlewarePublicPaths } from "./middleware-patch";
 
 function dirOf(path: string): string {
   const idx = path.lastIndexOf("/");
@@ -29,6 +31,25 @@ function relativePath(fromDir: string, toPath: string): string {
 
 const enc = new TextEncoder();
 const dec = new TextDecoder("utf-8");
+
+/** Best-effort mapping from a project file path to the root-relative public
+ * URL a browser would actually fetch it at — used only to tell an existing
+ * middleware.ts auth gate which paths to let through, so an approximate
+ * answer here is far better than none (see middleware-patch.ts for why this
+ * matters). Next's App Router manifest
+ * file-convention is special-cased since it's always served at
+ * /manifest.webmanifest regardless of where manifest.ts physically lives;
+ * everything else is resolved relative to the project's "public/" folder,
+ * which is how both Next.js and Nuxt serve static assets at the root. */
+function servedUrlFor(strategy: PwaStrategy, filePath: string, kind: "manifest" | "sw"): string {
+  if (strategy === "next-app-router" && kind === "manifest") {
+    return resolvePublicPath("/", "manifest.webmanifest");
+  }
+  const publicMarker = "public/";
+  const idx = filePath.indexOf(publicMarker);
+  const rel = idx !== -1 ? filePath.slice(idx + publicMarker.length) : filePath.replace(/^\/+/, "");
+  return resolvePublicPath("/", rel);
+}
 
 export interface BuildInputs {
   files: ClientFile[];
@@ -62,6 +83,12 @@ interface Ctx {
   /** Entry HTML actually relevant to this run, for HTML validation. Null for
    * strategies (next-app-router, nuxt3) that don't do head injection. */
   entryHtmlPathUsed: string | null;
+  /** Public URL of the manifest/service worker Harbor PWA created or
+   * updated this run (not set for a preserved pre-existing file — those
+   * predate Harbor PWA and are the project author's own concern). Feeds the
+   * middleware.ts public-path patch below; null if nothing was managed. */
+  manifestUrlUsed: string | null;
+  serviceWorkerUrlUsed: string | null;
 }
 
 export async function generatePwaPackage(inputs: BuildInputs): Promise<GenerateResult> {
@@ -115,6 +142,8 @@ export async function generatePwaPackage(inputs: BuildInputs): Promise<GenerateR
     recordPlan,
     manifestPathUsed: null,
     entryHtmlPathUsed: null,
+    manifestUrlUsed: null,
+    serviceWorkerUrlUsed: null,
   };
 
   let manualSteps: string[];
@@ -130,6 +159,37 @@ export async function generatePwaPackage(inputs: BuildInputs): Promise<GenerateR
       break;
     default:
       throw new Error("unsupported_strategy");
+  }
+
+  // If the target project ships its own middleware.ts auth gate, exempt the
+  // manifest/service-worker Harbor PWA just created or updated so Chrome can
+  // fetch them (and evaluate PWA installability) before the user logs in.
+  // Only paths actually managed this run are considered — see
+  // Ctx.manifestUrlUsed/serviceWorkerUrlUsed. Never invents an allowlist.
+  const publicUrlsToEnsure = [ctx.manifestUrlUsed, ctx.serviceWorkerUrlUsed].filter((u): u is string => !!u);
+  if (publicUrlsToEnsure.length > 0) {
+    const middlewarePath = findMiddlewarePath(byPath);
+    if (middlewarePath) {
+      const middlewareFile = byPath.get(middlewarePath)!;
+      const middlewareCode = dec.decode(middlewareFile.bytes);
+      const mwPatch = patchMiddlewarePublicPaths(middlewareCode, publicUrlsToEnsure);
+      if (mwPatch.changed) {
+        put(middlewarePath, enc.encode(mwPatch.code));
+        recordPlan(
+          middlewarePath,
+          "UPDATE",
+          `added ${mwPatch.addedPaths.join(", ")} to the existing public-path allowlist (${mwPatch.varName}) so the auth gate never blocks the PWA manifest/service worker`
+        );
+      } else if (mwPatch.notes.includes("middleware_no_public_path_list_found")) {
+        manualSteps.push("middleware_no_public_path_list_found");
+        recordPlan(
+          middlewarePath,
+          "WARNING",
+          `found an auth-gate middleware.ts but couldn't identify its public-path allowlist automatically — add these paths so they bypass auth: ${publicUrlsToEnsure.join(", ")}`
+        );
+      }
+      // "middleware_paths_already_public": nothing to do, nothing to record.
+    }
   }
 
   // Post-generation validation (Phase 4 §2) — must run before packaging.
@@ -245,6 +305,7 @@ export default function Document() {
     ctx.recordPlan(manifestPath, existed ? "UPDATE" : "CREATE", existed ? "existing manifest found, user chose Replace" : "no existing manifest detected");
     manifestHref = hrefFor(manifestPath);
     ctx.manifestPathUsed = manifestPath;
+    ctx.manifestUrlUsed = servedUrlFor(analysis.strategy, manifestPath, "manifest");
   } else if (analysis.existingManifestPath) {
     manifestHref = hrefFor(analysis.existingManifestPath);
     ctx.recordPlan(analysis.existingManifestPath, "PRESERVE", "existing manifest found, keeping by default");
@@ -265,6 +326,7 @@ export default function Document() {
     const existed = byPath.has(swPath);
     put(swPath, enc.encode(generateServiceWorkerSource(version)));
     ctx.recordPlan(swPath, existed ? "UPDATE" : "CREATE", existed ? "existing Service Worker found, user chose Replace" : "no active Service Worker detected");
+    ctx.serviceWorkerUrlUsed = servedUrlFor(analysis.strategy, swPath, "sw");
   } else if (analysis.existingServiceWorkerPath) {
     ctx.recordPlan(analysis.existingServiceWorkerPath, "PRESERVE", "existing Service Worker found, keeping by default");
   }
@@ -338,6 +400,7 @@ async function runNextAppRouter(ctx: Ctx): Promise<string[]> {
     put(manifestPath, enc.encode(src));
     ctx.recordPlan(manifestPath, existed ? "UPDATE" : "CREATE", "Next.js file-convention manifest");
     ctx.manifestPathUsed = manifestPath;
+    ctx.manifestUrlUsed = servedUrlFor(analysis.strategy, manifestPath, "manifest");
     if (analysis.existingManifestPath) {
       manualSteps.push("next_old_manifest_left_in_place");
       ctx.recordPlan(analysis.existingManifestPath, "WARNING", `an older manifest file still exists alongside the new ${manifestPath} — review manually`);
@@ -356,6 +419,7 @@ async function runNextAppRouter(ctx: Ctx): Promise<string[]> {
     const existedSw = byPath.has("public/service-worker.js");
     put("public/service-worker.js", enc.encode(generateServiceWorkerSource(version)));
     ctx.recordPlan("public/service-worker.js", existedSw ? "UPDATE" : "CREATE", existedSw ? "existing Service Worker found, user chose Replace" : "no active Service Worker detected");
+    ctx.serviceWorkerUrlUsed = servedUrlFor(analysis.strategy, "public/service-worker.js", "sw");
 
     const componentPath = `${layoutDir}harbor-register-sw.tsx`;
     const existedComponent = byPath.has(componentPath);
@@ -410,6 +474,7 @@ async function runNuxt3(ctx: Ctx): Promise<string[]> {
     put("public/manifest.json", enc.encode(serializeManifest(manifest)));
     ctx.recordPlan("public/manifest.json", existed ? "UPDATE" : "CREATE", existed ? "existing manifest found, user chose Replace" : "no existing manifest detected");
     ctx.manifestPathUsed = "public/manifest.json";
+    ctx.manifestUrlUsed = servedUrlFor(analysis.strategy, "public/manifest.json", "manifest");
   } else if (analysis.existingManifestPath) {
     manifestHref = resolvePublicPath("/", analysis.existingManifestPath.replace(/^public\//, ""));
     ctx.recordPlan(analysis.existingManifestPath, "PRESERVE", "existing manifest found, keeping by default");
@@ -434,6 +499,7 @@ async function runNuxt3(ctx: Ctx): Promise<string[]> {
     const existedSw = byPath.has("public/service-worker.js");
     put("public/service-worker.js", enc.encode(generateServiceWorkerSource(version)));
     ctx.recordPlan("public/service-worker.js", existedSw ? "UPDATE" : "CREATE", existedSw ? "existing Service Worker found, user chose Replace" : "no active Service Worker detected");
+    ctx.serviceWorkerUrlUsed = servedUrlFor(analysis.strategy, "public/service-worker.js", "sw");
     const nuxtSwPluginPath = "plugins/harbor-pwa-sw.client.ts";
     const existedNuxtSwPlugin = byPath.has(nuxtSwPluginPath);
     put(nuxtSwPluginPath, enc.encode(generateNuxtSwPlugin(resolvePublicPath("/", "service-worker.js"))));
