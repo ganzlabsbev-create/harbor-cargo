@@ -4,6 +4,7 @@ import { LangProvider } from "@/lib/i18n-context";
 import UpdateBanner from "@/components/UpdateBanner";
 import CaptainHarbor from "@/components/CaptainHarbor";
 import { Analytics } from "@vercel/analytics/next";
+import HarborRegisterSW from "./harbor-register-sw";
 import "./globals.css";
 
 // Self-hosted via next/font (downloaded + bundled at build time, no runtime
@@ -61,6 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <CaptainHarbor />
         </LangProvider>
         <Analytics />
+      <HarborRegisterSW />
       </body>
     </html>
   );

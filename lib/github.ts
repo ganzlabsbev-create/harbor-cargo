@@ -73,56 +73,13 @@ function friendlyGithubError(status: number, pathname: string, rawText: string):
   return new GitHubApiError(status, "github_error", githubMessage || `GitHub API error (${pathname}): ${status}`);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-/**
- * Reads how long to wait before retrying from GitHub's own headers instead of
- * guessing. `Retry-After` (seconds) is what the secondary/abuse rate limiter
- * sends; `x-ratelimit-reset` (unix seconds) is what the primary rate limiter
- * sends. Falls back to `fallbackMs` if neither header is present.
- */
-function retryDelayMs(res: Response, fallbackMs: number): number {
-  const retryAfter = res.headers.get("retry-after");
-  if (retryAfter) {
-    const secs = Number(retryAfter);
-    if (Number.isFinite(secs) && secs > 0) return secs * 1000;
-  }
-  const reset = res.headers.get("x-ratelimit-reset");
-  const remaining = res.headers.get("x-ratelimit-remaining");
-  if (reset && remaining === "0") {
-    const resetMs = Number(reset) * 1000 - Date.now();
-    if (resetMs > 0) return resetMs;
-  }
-  return fallbackMs;
-}
-
-const MAX_RATE_LIMIT_RETRIES = 5;
-
 async function gh(token: string, pathname: string, init?: RequestInit) {
-  let attempt = 0;
-  while (true) {
-    const res = await fetch(`${API}${pathname}`, { ...init, headers: headers(token) });
-    if (res.ok) {
-      return res.json();
-    }
-
+  const res = await fetch(`${API}${pathname}`, { ...init, headers: headers(token) });
+  if (!res.ok) {
     const text = await res.text();
-    const isRateLimited = res.status === 429 || (res.status === 403 && /rate limit/i.test(text));
-
-    if (isRateLimited && attempt < MAX_RATE_LIMIT_RETRIES) {
-      // Cap the wait so a single call never blocks a request for more than
-      // ~20s — beyond that it's better to surface the friendly error and let
-      // the user retry than to hold the connection open indefinitely.
-      const delay = Math.min(retryDelayMs(res, 1000 * 2 ** attempt), 20000);
-      attempt++;
-      await sleep(delay);
-      continue;
-    }
-
     throw friendlyGithubError(res.status, pathname, text);
   }
+  return res.json();
 }
 
 export async function getAuthenticatedUser(token: string): Promise<{
@@ -194,11 +151,6 @@ export async function pushFilesToRepo(
       body: JSON.stringify({ content: content.toString("base64"), encoding: "base64" }),
     });
     treeItems.push({ path: rel, mode: "100644", type: "blob", sha: blob.sha });
-    // Small pacing gap between blob POSTs. GitHub's secondary/abuse rate
-    // limiter throttles bursts of content-creating requests even when well
-    // under the primary hourly quota — this keeps large uploads (100+
-    // files) from tripping it in the first place.
-    await sleep(120);
   }
 
   const tree = await gh(token, `/repos/${owner}/${repo}/git/trees`, {
@@ -379,10 +331,6 @@ export async function commitFileChanges(
       body: JSON.stringify({ content: change.content.toString("base64"), encoding: "base64" }),
     });
     treeItems.push({ path: change.path, mode: "100644", type: "blob", sha: blob.sha });
-    // Same pacing as pushFilesToRepo — this is the path a 100+ file diff
-    // (like "replace 179 files") goes through, and it's exactly what was
-    // tripping GitHub's secondary rate limiter.
-    await sleep(120);
   }
 
   const tree = await gh(token, `/repos/${owner}/${repo}/git/trees`, {
