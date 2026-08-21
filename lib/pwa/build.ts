@@ -83,10 +83,13 @@ interface Ctx {
   /** Entry HTML actually relevant to this run, for HTML validation. Null for
    * strategies (next-app-router, nuxt3) that don't do head injection. */
   entryHtmlPathUsed: string | null;
-  /** Public URL of the manifest/service worker Harbor PWA created or
-   * updated this run (not set for a preserved pre-existing file — those
-   * predate Harbor PWA and are the project author's own concern). Feeds the
-   * middleware.ts public-path patch below; null if nothing was managed. */
+  /** Public URL of the manifest/service worker that exists in the final
+   * output of this run — whether Harbor PWA created/updated it, or it's a
+   * pre-existing file that was PRESERVEd as-is. The auth gate doesn't care
+   * which; it only needs to know the path is real and must stay public.
+   * Feeds the middleware.ts public-path patch below; null only when no
+   * manifest/service worker is in play at all (e.g. manifest_skipped and no
+   * existing one detected). */
   manifestUrlUsed: string | null;
   serviceWorkerUrlUsed: string | null;
 }
@@ -162,10 +165,12 @@ export async function generatePwaPackage(inputs: BuildInputs): Promise<GenerateR
   }
 
   // If the target project ships its own middleware.ts auth gate, exempt the
-  // manifest/service-worker Harbor PWA just created or updated so Chrome can
-  // fetch them (and evaluate PWA installability) before the user logs in.
-  // Only paths actually managed this run are considered — see
-  // Ctx.manifestUrlUsed/serviceWorkerUrlUsed. Never invents an allowlist.
+  // manifest/service worker that end up in the final output this run —
+  // whether Harbor PWA just created/updated them, or they're a pre-existing
+  // manifest/SW that was PRESERVEd — so Chrome can fetch them (and evaluate
+  // PWA installability) before the user logs in. Only paths actually present
+  // this run are considered — see Ctx.manifestUrlUsed/serviceWorkerUrlUsed.
+  // Never invents an allowlist.
   const publicUrlsToEnsure = [ctx.manifestUrlUsed, ctx.serviceWorkerUrlUsed].filter((u): u is string => !!u);
   if (publicUrlsToEnsure.length > 0) {
     const middlewarePath = findMiddlewarePath(byPath);
@@ -310,6 +315,7 @@ export default function Document() {
     manifestHref = hrefFor(analysis.existingManifestPath);
     ctx.recordPlan(analysis.existingManifestPath, "PRESERVE", "existing manifest found, keeping by default");
     ctx.manifestPathUsed = analysis.existingManifestPath;
+    ctx.manifestUrlUsed = servedUrlFor(analysis.strategy, analysis.existingManifestPath, "manifest");
   }
   const appleIconFile = iconFiles.find((f) => f.purpose === "apple");
   if (appleIconFile) {
@@ -329,6 +335,7 @@ export default function Document() {
     ctx.serviceWorkerUrlUsed = servedUrlFor(analysis.strategy, swPath, "sw");
   } else if (analysis.existingServiceWorkerPath) {
     ctx.recordPlan(analysis.existingServiceWorkerPath, "PRESERVE", "existing Service Worker found, keeping by default");
+    ctx.serviceWorkerUrlUsed = servedUrlFor(analysis.strategy, analysis.existingServiceWorkerPath, "sw");
   }
 
   // 4. HTML integration
@@ -409,6 +416,7 @@ async function runNextAppRouter(ctx: Ctx): Promise<string[]> {
     manualSteps.push("manifest_skipped_by_user");
     if (analysis.existingManifestPath) {
       ctx.recordPlan(analysis.existingManifestPath, "PRESERVE", "existing manifest found, keeping by default");
+      ctx.manifestUrlUsed = servedUrlFor(analysis.strategy, analysis.existingManifestPath, "manifest");
     }
   }
 
@@ -439,6 +447,7 @@ async function runNextAppRouter(ctx: Ctx): Promise<string[]> {
     }
   } else if (analysis.existingServiceWorkerPath) {
     ctx.recordPlan(analysis.existingServiceWorkerPath, "PRESERVE", "existing Service Worker found, keeping by default");
+    ctx.serviceWorkerUrlUsed = servedUrlFor(analysis.strategy, analysis.existingServiceWorkerPath, "sw");
   }
 
   onStep?.("html"); // no-op for this strategy — kept so the progress UI still advances through the same steps
@@ -479,6 +488,7 @@ async function runNuxt3(ctx: Ctx): Promise<string[]> {
     manifestHref = resolvePublicPath("/", analysis.existingManifestPath.replace(/^public\//, ""));
     ctx.recordPlan(analysis.existingManifestPath, "PRESERVE", "existing manifest found, keeping by default");
     ctx.manifestPathUsed = analysis.existingManifestPath;
+    ctx.manifestUrlUsed = servedUrlFor(analysis.strategy, analysis.existingManifestPath, "manifest");
   }
 
   onStep?.("html");
@@ -506,6 +516,7 @@ async function runNuxt3(ctx: Ctx): Promise<string[]> {
     ctx.recordPlan(nuxtSwPluginPath, existedNuxtSwPlugin ? "UPDATE" : "CREATE", "Nuxt client plugin for Service Worker registration");
   } else if (analysis.existingServiceWorkerPath) {
     ctx.recordPlan(analysis.existingServiceWorkerPath, "PRESERVE", "existing Service Worker found, keeping by default");
+    ctx.serviceWorkerUrlUsed = servedUrlFor(analysis.strategy, analysis.existingServiceWorkerPath, "sw");
   }
 
   return manualSteps;
