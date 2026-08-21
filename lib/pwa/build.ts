@@ -1,9 +1,13 @@
 import type { ClientFile } from "@/lib/client-zip";
-import type { ProjectAnalysis, PwaFormState, GenerateResult, GenerateStep } from "./types";
+import type { ProjectAnalysis, PwaFormState, GenerateResult, GenerateStep, MutationPlanEntry } from "./types";
 import { buildManifest, serializeManifest, type ManifestIconSpec } from "./manifest";
 import { injectPwaHtml } from "./html";
 import { generateServiceWorkerSource, generateRegistrationSnippet } from "./service-worker";
 import { renderIconPng, ICON_SIZES } from "./icons";
+import { generateNextManifestTs, generateRegisterSwComponent, patchNextLayoutForServiceWorker, nextManifestPathFor } from "./next-app-router";
+import { patchNuxtConfigHead, generateNuxtSwPlugin } from "./nuxt";
+import { resolvePublicPath } from "./detect/base-path";
+import { validateOutput, PwaValidationError } from "./validate";
 
 function dirOf(path: string): string {
   const idx = path.lastIndexOf("/");
@@ -34,21 +38,44 @@ export interface BuildInputs {
   onStep?: (step: GenerateStep) => void;
 }
 
+interface Ctx {
+  analysis: ProjectAnalysis;
+  form: PwaFormState;
+  iconImage: HTMLImageElement;
+  onStep?: (step: GenerateStep) => void;
+  byPath: Map<string, ClientFile>;
+  added: string[];
+  updated: string[];
+  preserved: string[];
+  plan: MutationPlanEntry[];
+  put: (path: string, bytes: Uint8Array) => void;
+  /** Icon-safety-aware write: only overwrites an existing file at `path` if
+   * form.replaceIcons is true. Otherwise records a PRESERVE decision and
+   * leaves the user's existing icon untouched — "Keep Manifest" must never
+   * be read as "ok to overwrite icons" (spec section 6). */
+  putIcon: (path: string, render: () => Promise<Uint8Array>) => Promise<void>;
+  recordPlan: (path: string, action: MutationPlanEntry["action"], reason: string) => void;
+  /** Path of the manifest in effect after this run (created/updated OR the
+   * existing one being preserved) — set by each strategy so OutputValidator
+   * knows what to check. Null if no manifest is in play. */
+  manifestPathUsed: string | null;
+  /** Entry HTML actually relevant to this run, for HTML validation. Null for
+   * strategies (next-app-router, nuxt3) that don't do head injection. */
+  entryHtmlPathUsed: string | null;
+}
+
 export async function generatePwaPackage(inputs: BuildInputs): Promise<GenerateResult> {
   const { files, analysis, form, iconImage, onStep } = inputs;
-
-  if (!analysis.entryHtmlPath) {
-    throw new Error("no_entry_html");
-  }
-  const entryDir = dirOf(analysis.entryHtmlPath);
-  const iconsDir = `${entryDir}icons/`;
-
-  const manageManifest = form.replaceManifest || !analysis.existingManifestPath;
-  const manageServiceWorker = form.replaceServiceWorker || !analysis.existingServiceWorkerPath;
 
   const byPath = new Map(files.map((f) => [f.path, f]));
   const added: string[] = [];
   const updated: string[] = [];
+  const preserved: string[] = [];
+  const plan: MutationPlanEntry[] = [];
+
+  function recordPlan(path: string, action: MutationPlanEntry["action"], reason: string) {
+    plan.push({ path, action, reason });
+  }
 
   function put(path: string, bytes: Uint8Array) {
     const existed = byPath.has(path);
@@ -61,66 +88,66 @@ export async function generatePwaPackage(inputs: BuildInputs): Promise<GenerateR
     }
   }
 
-  // 1. Icons — always co-located with the entry HTML, regardless of where an
-  // existing manifest happens to live, so the folder layout stays predictable.
-  onStep?.("icons");
-  const iconFiles: { fileName: string; purpose: "manifest" | "apple"; size: number }[] = [];
-  for (const spec of ICON_SIZES) {
-    const png = await renderIconPng(iconImage, spec.size);
-    put(`${iconsDir}${spec.fileName}`, png);
-    iconFiles.push({ fileName: spec.fileName, purpose: spec.purpose, size: spec.size });
+  async function putIcon(path: string, render: () => Promise<Uint8Array>) {
+    const existed = byPath.has(path);
+    if (existed && !form.replaceIcons) {
+      if (!preserved.includes(path)) preserved.push(path);
+      recordPlan(path, "PRESERVE", "existing icon found, keeping by default (replaceIcons not set)");
+      return;
+    }
+    const bytes = await render();
+    put(path, bytes);
+    recordPlan(path, existed ? "UPDATE" : "CREATE", existed ? "existing icon replaced (replaceIcons enabled)" : "no existing icon at this path");
   }
 
-  // 2. Manifest — icon `src` values are resolved relative to wherever the
-  // manifest itself ends up (which may differ from iconsDir if we're
-  // replacing an existing manifest.json that lived elsewhere).
-  onStep?.("manifest");
-  let manifestRelHref: string | null = null;
-  let appleIconPath: string | null = null;
-  if (manageManifest) {
-    const manifestPath = analysis.existingManifestPath && form.replaceManifest ? analysis.existingManifestPath : `${entryDir}manifest.json`;
-    const manifestDir = dirOf(manifestPath);
-    const manifestIcons: ManifestIconSpec[] = iconFiles
-      .filter((f) => f.purpose === "manifest")
-      .map((f) => ({ src: relativePath(manifestDir, `${iconsDir}${f.fileName}`), sizes: `${f.size}x${f.size}`, type: "image/png" }));
-    const manifest = buildManifest(form, manifestIcons);
-    put(manifestPath, enc.encode(serializeManifest(manifest)));
-    manifestRelHref = relativePath(entryDir, manifestPath);
-  } else if (analysis.existingManifestPath) {
-    manifestRelHref = relativePath(entryDir, analysis.existingManifestPath);
-  }
-  const appleIconFile = iconFiles.find((f) => f.purpose === "apple");
-  if (appleIconFile) {
-    appleIconPath = relativePath(entryDir, `${iconsDir}${appleIconFile.fileName}`);
+  const ctx: Ctx = {
+    analysis,
+    form,
+    iconImage,
+    onStep,
+    byPath,
+    added,
+    updated,
+    preserved,
+    plan,
+    put,
+    putIcon,
+    recordPlan,
+    manifestPathUsed: null,
+    entryHtmlPathUsed: null,
+  };
+
+  let manualSteps: string[];
+  switch (analysis.strategy) {
+    case "html-shell":
+      manualSteps = await runHtmlShell(ctx);
+      break;
+    case "next-app-router":
+      manualSteps = await runNextAppRouter(ctx);
+      break;
+    case "nuxt3":
+      manualSteps = await runNuxt3(ctx);
+      break;
+    default:
+      throw new Error("unsupported_strategy");
   }
 
-  // 3. Service worker
-  onStep?.("sw");
-  let swRelHref: string | null = null;
-  if (manageServiceWorker) {
-    const version = Date.now().toString(36);
-    const swPath = analysis.existingServiceWorkerPath && form.replaceServiceWorker ? analysis.existingServiceWorkerPath : `${entryDir}service-worker.js`;
-    swRelHref = relativePath(entryDir, swPath);
-    put(swPath, enc.encode(generateServiceWorkerSource(version)));
-  }
-
-  // 4. HTML integration
-  onStep?.("html");
-  const entryFile = byPath.get(analysis.entryHtmlPath)!;
-  const htmlText = dec.decode(entryFile.bytes);
-  const result = injectPwaHtml(htmlText, {
-    manifestHref: manifestRelHref || "manifest.json",
-    themeColor: form.themeColor,
-    appleTouchIconHref: appleIconPath,
-    swRegistrationScript: swRelHref ? generateRegistrationSnippet(swRelHref) : null,
-    manageManifestTags: manageManifest,
-    manageServiceWorker: manageServiceWorker,
+  // Post-generation validation (Phase 4 §2) — must run before packaging.
+  // A failing validation must never reach a successful-generation ZIP; the
+  // caller's original `files` array was never mutated (byPath is a fresh
+  // copy), so throwing here already leaves the original project untouched.
+  const validation = validateOutput({
+    plan,
+    originalFiles: files,
+    finalByPath: byPath,
+    manifestPath: ctx.manifestPathUsed,
+    entryHtmlPath: ctx.entryHtmlPathUsed,
+    assetRoot: analysis.assetRoot || "public",
   });
-  if (result.changed) {
-    put(analysis.entryHtmlPath, enc.encode(result.html));
+  if (!validation.valid) {
+    throw new PwaValidationError(validation);
   }
 
-  // 5. Package
   onStep?.("packaging");
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
@@ -133,8 +160,274 @@ export async function generatePwaPackage(inputs: BuildInputs): Promise<GenerateR
     zipBlob,
     added: added.sort(),
     updated: updated.sort(),
-    unchanged: [],
+    unchanged: preserved.sort(),
+    manualSteps,
+    mutationPlan: plan,
+    validationWarnings: validation.warnings,
   };
+}
+
+/** Static HTML, Vite, CRA, Angular, SvelteKit, Astro, Gatsby, Remix, and Next.js Pages Router. */
+async function runHtmlShell(ctx: Ctx): Promise<string[]> {
+  const { analysis, form, iconImage, onStep, byPath, put } = ctx;
+  if (!analysis.entryHtmlPath) throw new Error("no_entry_html");
+  const entryPath = analysis.entryHtmlPath;
+  const manualSteps: string[] = [];
+
+  // Next.js Pages Router without a custom pages/_document.tsx: synthesize a
+  // minimal one first, then treat it exactly like any other html-shell.
+  if (analysis.entryHtmlNeedsCreate) {
+    const boilerplate = `import { Html, Head, Main, NextScript } from "next/document";
+
+export default function Document() {
+  return (
+    <Html lang="en">
+      <Head></Head>
+      <body>
+        <Main />
+        <NextScript />
+      </body>
+    </Html>
+  );
+}
+`;
+    put(entryPath, enc.encode(boilerplate));
+  }
+
+  const entryDir = dirOf(entryPath);
+  // Vite serves anything under `public/` verbatim from the site root
+  // regardless of where index.html lives, so icons/manifest/SW need to go
+  // there (and use root-relative hrefs) rather than sit next to index.html
+  // at the project root, where the bundler would never pick them up.
+  const useAssetRoot = analysis.framework === "Vite" || (!!analysis.assetRoot && !entryPath.startsWith(`${analysis.assetRoot}/`));
+  const assetBase = useAssetRoot ? `${analysis.assetRoot || "public"}/` : entryDir;
+  const iconsDir = `${assetBase}icons/`;
+
+  function hrefFor(targetPath: string): string {
+    if (useAssetRoot) {
+      const base = analysis.assetRoot || "public";
+      // TODO(base-path): once a strategy populates a real deployment base
+      // path on ProjectAnalysis, pass it here instead of "/".
+      return resolvePublicPath("/", targetPath.slice(base.length + 1));
+    }
+    return relativePath(entryDir, targetPath);
+  }
+
+  const manageManifest = form.replaceManifest || !analysis.existingManifestPath;
+  const manageServiceWorker = form.replaceServiceWorker || !analysis.existingServiceWorkerPath;
+
+  // 1. Icons
+  onStep?.("icons");
+  const iconFiles: { fileName: string; purpose: "manifest" | "apple"; size: number }[] = [];
+  for (const spec of ICON_SIZES) {
+    const iconPath = `${iconsDir}${spec.fileName}`;
+    await ctx.putIcon(iconPath, () => renderIconPng(iconImage, spec.size));
+    iconFiles.push({ fileName: spec.fileName, purpose: spec.purpose, size: spec.size });
+  }
+
+  // 2. Manifest
+  onStep?.("manifest");
+  let manifestHref: string | null = null;
+  let appleIconHref: string | null = null;
+  if (manageManifest) {
+    const manifestPath = analysis.existingManifestPath && form.replaceManifest ? analysis.existingManifestPath : `${assetBase}manifest.json`;
+    const manifestDir = dirOf(manifestPath);
+    const manifestIcons: ManifestIconSpec[] = iconFiles
+      .filter((f) => f.purpose === "manifest")
+      .map((f) => ({ src: relativePath(manifestDir, `${iconsDir}${f.fileName}`), sizes: `${f.size}x${f.size}`, type: "image/png" }));
+    const manifest = buildManifest(form, manifestIcons);
+    const existed = byPath.has(manifestPath);
+    put(manifestPath, enc.encode(serializeManifest(manifest)));
+    ctx.recordPlan(manifestPath, existed ? "UPDATE" : "CREATE", existed ? "existing manifest found, user chose Replace" : "no existing manifest detected");
+    manifestHref = hrefFor(manifestPath);
+    ctx.manifestPathUsed = manifestPath;
+  } else if (analysis.existingManifestPath) {
+    manifestHref = hrefFor(analysis.existingManifestPath);
+    ctx.recordPlan(analysis.existingManifestPath, "PRESERVE", "existing manifest found, keeping by default");
+    ctx.manifestPathUsed = analysis.existingManifestPath;
+  }
+  const appleIconFile = iconFiles.find((f) => f.purpose === "apple");
+  if (appleIconFile) {
+    appleIconHref = hrefFor(`${iconsDir}${appleIconFile.fileName}`);
+  }
+
+  // 3. Service worker
+  onStep?.("sw");
+  let swHref: string | null = null;
+  if (manageServiceWorker) {
+    const version = Date.now().toString(36);
+    const swPath = analysis.existingServiceWorkerPath && form.replaceServiceWorker ? analysis.existingServiceWorkerPath : `${assetBase}service-worker.js`;
+    swHref = hrefFor(swPath);
+    const existed = byPath.has(swPath);
+    put(swPath, enc.encode(generateServiceWorkerSource(version)));
+    ctx.recordPlan(swPath, existed ? "UPDATE" : "CREATE", existed ? "existing Service Worker found, user chose Replace" : "no active Service Worker detected");
+  } else if (analysis.existingServiceWorkerPath) {
+    ctx.recordPlan(analysis.existingServiceWorkerPath, "PRESERVE", "existing Service Worker found, keeping by default");
+  }
+
+  // 4. HTML integration
+  onStep?.("html");
+  ctx.entryHtmlPathUsed = entryPath;
+  const entryFile = byPath.get(entryPath)!;
+  const htmlText = dec.decode(entryFile.bytes);
+  const result = injectPwaHtml(htmlText, {
+    manifestHref: manifestHref || "manifest.json",
+    themeColor: form.themeColor,
+    appleTouchIconHref: appleIconHref,
+    swRegistrationScript: swHref ? generateRegistrationSnippet(swHref) : null,
+    manageManifestTags: manageManifest,
+    manageServiceWorker: manageServiceWorker,
+  });
+  if (result.changed) {
+    put(entryPath, enc.encode(result.html));
+    ctx.recordPlan(entryPath, "UPDATE", "PWA <head> tags/registration script injected");
+  } else if (result.notes.includes("no_head_tag")) {
+    manualSteps.push("html_shell_no_head_found");
+    ctx.recordPlan(entryPath, "WARNING", "no safe <head> insertion point found — left untouched");
+  }
+
+  return manualSteps;
+}
+
+/** Next.js App Router: file-convention icons + manifest.ts, layout.tsx only touched to mount the SW component. */
+async function runNextAppRouter(ctx: Ctx): Promise<string[]> {
+  const { analysis, form, iconImage, onStep, byPath, put } = ctx;
+  if (!analysis.configFilePath) throw new Error("no_config_file");
+  const layoutPath = analysis.configFilePath;
+  const layoutDir = dirOf(layoutPath);
+  const manualSteps: string[] = [];
+
+  const manageManifest = form.replaceManifest || !analysis.existingManifestPath;
+  const manageServiceWorker = form.replaceServiceWorker || !analysis.existingServiceWorkerPath;
+
+  // 1. Icons — the manifest set under public/icons/, plus Next's own
+  // icon.png / apple-icon.png file convention right next to layout.tsx
+  // (auto-linked into every page's <head>, no patch required).
+  onStep?.("icons");
+  for (const spec of ICON_SIZES) {
+    await ctx.putIcon(`public/icons/${spec.fileName}`, () => renderIconPng(iconImage, spec.size));
+  }
+  await ctx.putIcon(`${layoutDir}icon.png`, () => renderIconPng(iconImage, 512));
+  await ctx.putIcon(`${layoutDir}apple-icon.png`, () => renderIconPng(iconImage, 180));
+
+  // 2. Manifest — <app-root>/manifest.ts, Next's own file convention. Must
+  // live in the same App Router root as layout.tsx — "app/" when the
+  // project uses app/layout.tsx, "src/app/" when it uses src/app/layout.tsx
+  // — using the same layoutDir already computed for the icon files above.
+  // Never hardcode "app/manifest.ts": that silently creates a second,
+  // duplicate "app/" root in src/app projects that Next.js will never serve.
+  onStep?.("manifest");
+  const manifestPath = nextManifestPathFor(layoutPath);
+  if (manageManifest) {
+    const src = generateNextManifestTs(
+      form,
+      resolvePublicPath("/", "icons/icon-192.png"),
+      resolvePublicPath("/", "icons/icon-512.png")
+    );
+    const existed = byPath.has(manifestPath);
+    put(manifestPath, enc.encode(src));
+    ctx.recordPlan(manifestPath, existed ? "UPDATE" : "CREATE", "Next.js file-convention manifest");
+    ctx.manifestPathUsed = manifestPath;
+    if (analysis.existingManifestPath) {
+      manualSteps.push("next_old_manifest_left_in_place");
+      ctx.recordPlan(analysis.existingManifestPath, "WARNING", `an older manifest file still exists alongside the new ${manifestPath} — review manually`);
+    }
+  } else {
+    manualSteps.push("manifest_skipped_by_user");
+    if (analysis.existingManifestPath) {
+      ctx.recordPlan(analysis.existingManifestPath, "PRESERVE", "existing manifest found, keeping by default");
+    }
+  }
+
+  // 3. Service worker + registration component mounted in layout.tsx.
+  onStep?.("sw");
+  if (manageServiceWorker) {
+    const version = Date.now().toString(36);
+    const existedSw = byPath.has("public/service-worker.js");
+    put("public/service-worker.js", enc.encode(generateServiceWorkerSource(version)));
+    ctx.recordPlan("public/service-worker.js", existedSw ? "UPDATE" : "CREATE", existedSw ? "existing Service Worker found, user chose Replace" : "no active Service Worker detected");
+
+    const componentPath = `${layoutDir}harbor-register-sw.tsx`;
+    put(componentPath, enc.encode(generateRegisterSwComponent(resolvePublicPath("/", "service-worker.js"))));
+
+    const layoutFile = byPath.get(layoutPath)!;
+    const layoutText = dec.decode(layoutFile.bytes);
+    const importPath = "./" + componentPath.slice(layoutDir.length).replace(/\.tsx?$/, "");
+    const patch = patchNextLayoutForServiceWorker(layoutText, importPath);
+    if (patch.changed) {
+      put(layoutPath, enc.encode(patch.code));
+      ctx.recordPlan(layoutPath, "UPDATE", "mounted <HarborRegisterSW /> before </body>");
+    } else if (patch.notes.includes("layout_no_body_tag")) {
+      manualSteps.push("next_layout_manual_sw_mount");
+      ctx.recordPlan(layoutPath, "WARNING", "no </body> tag found — could not auto-mount the SW registration component");
+    }
+  } else if (analysis.existingServiceWorkerPath) {
+    ctx.recordPlan(analysis.existingServiceWorkerPath, "PRESERVE", "existing Service Worker found, keeping by default");
+  }
+
+  onStep?.("html"); // no-op for this strategy — kept so the progress UI still advances through the same steps
+  return manualSteps;
+}
+
+/** Nuxt 3: icons + manifest.json under public/, nuxt.config `app.head` patched, SW registered via a client plugin. */
+async function runNuxt3(ctx: Ctx): Promise<string[]> {
+  const { analysis, form, iconImage, onStep, byPath, put } = ctx;
+  if (!analysis.configFilePath) throw new Error("no_config_file");
+  const manualSteps: string[] = [];
+
+  const manageManifest = form.replaceManifest || !analysis.existingManifestPath;
+  const manageServiceWorker = form.replaceServiceWorker || !analysis.existingServiceWorkerPath;
+
+  onStep?.("icons");
+  const iconFiles: { fileName: string; purpose: "manifest" | "apple"; size: number }[] = [];
+  for (const spec of ICON_SIZES) {
+    await ctx.putIcon(`public/icons/${spec.fileName}`, () => renderIconPng(iconImage, spec.size));
+    iconFiles.push({ fileName: spec.fileName, purpose: spec.purpose, size: spec.size });
+  }
+  const appleFile = iconFiles.find((f) => f.purpose === "apple")!;
+  const appleIconHref = resolvePublicPath("/", `icons/${appleFile.fileName}`);
+
+  onStep?.("manifest");
+  let manifestHref = resolvePublicPath("/", "manifest.json");
+  if (manageManifest) {
+    const manifestIcons: ManifestIconSpec[] = iconFiles
+      .filter((f) => f.purpose === "manifest")
+      .map((f) => ({ src: resolvePublicPath("/", `icons/${f.fileName}`), sizes: `${f.size}x${f.size}`, type: "image/png" }));
+    const manifest = buildManifest(form, manifestIcons);
+    const existed = byPath.has("public/manifest.json");
+    put("public/manifest.json", enc.encode(serializeManifest(manifest)));
+    ctx.recordPlan("public/manifest.json", existed ? "UPDATE" : "CREATE", existed ? "existing manifest found, user chose Replace" : "no existing manifest detected");
+    ctx.manifestPathUsed = "public/manifest.json";
+  } else if (analysis.existingManifestPath) {
+    manifestHref = resolvePublicPath("/", analysis.existingManifestPath.replace(/^public\//, ""));
+    ctx.recordPlan(analysis.existingManifestPath, "PRESERVE", "existing manifest found, keeping by default");
+    ctx.manifestPathUsed = analysis.existingManifestPath;
+  }
+
+  onStep?.("html");
+  const cfgFile = byPath.get(analysis.configFilePath)!;
+  const cfgText = dec.decode(cfgFile.bytes);
+  const patch = patchNuxtConfigHead(cfgText, form, manifestHref, appleIconHref);
+  if (patch.changed) {
+    put(analysis.configFilePath, enc.encode(patch.code));
+    ctx.recordPlan(analysis.configFilePath, "UPDATE", "merged PWA head tags into existing app.head config");
+  } else {
+    manualSteps.push(patch.notes[0] === "nuxt_head_already_patched" ? "nuxt_head_already_patched" : "nuxt_config_manual_head");
+    ctx.recordPlan(analysis.configFilePath, "WARNING", "could not safely merge app.head config automatically — left untouched");
+  }
+
+  onStep?.("sw");
+  if (manageServiceWorker) {
+    const version = Date.now().toString(36);
+    const existedSw = byPath.has("public/service-worker.js");
+    put("public/service-worker.js", enc.encode(generateServiceWorkerSource(version)));
+    ctx.recordPlan("public/service-worker.js", existedSw ? "UPDATE" : "CREATE", existedSw ? "existing Service Worker found, user chose Replace" : "no active Service Worker detected");
+    put("plugins/harbor-pwa-sw.client.ts", enc.encode(generateNuxtSwPlugin(resolvePublicPath("/", "service-worker.js"))));
+  } else if (analysis.existingServiceWorkerPath) {
+    ctx.recordPlan(analysis.existingServiceWorkerPath, "PRESERVE", "existing Service Worker found, keeping by default");
+  }
+
+  return manualSteps;
 }
 
 export function downloadBlob(blob: Blob, fileName: string) {

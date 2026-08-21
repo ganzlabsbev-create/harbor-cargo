@@ -1,0 +1,889 @@
+TAP version 13
+# Subtest: normalizeBasePath: null/undefined/empty all mean root
+ok 1 - normalizeBasePath: null/undefined/empty all mean root
+  ---
+  duration_ms: 2.106678
+  type: 'test'
+  ...
+# Subtest: normalizeBasePath: adds leading and trailing slash
+ok 2 - normalizeBasePath: adds leading and trailing slash
+  ---
+  duration_ms: 0.272765
+  type: 'test'
+  ...
+# Subtest: normalizeBasePath: collapses duplicate slashes
+ok 3 - normalizeBasePath: collapses duplicate slashes
+  ---
+  duration_ms: 0.098373
+  type: 'test'
+  ...
+# Subtest: resolvePublicPath: root base, no leading slash on asset
+ok 4 - resolvePublicPath: root base, no leading slash on asset
+  ---
+  duration_ms: 0.113268
+  type: 'test'
+  ...
+# Subtest: resolvePublicPath: root base, asset already has leading slash
+ok 5 - resolvePublicPath: root base, asset already has leading slash
+  ---
+  duration_ms: 0.108816
+  type: 'test'
+  ...
+# Subtest: resolvePublicPath: subpath base
+ok 6 - resolvePublicPath: subpath base
+  ---
+  duration_ms: 0.080532
+  type: 'test'
+  ...
+# Subtest: resolvePublicPath: subpath base with asset that has a leading slash
+ok 7 - resolvePublicPath: subpath base with asset that has a leading slash
+  ---
+  duration_ms: 0.0631
+  type: 'test'
+  ...
+# Subtest: resolvePublicPath: null/undefined base defaults to root
+ok 8 - resolvePublicPath: null/undefined base defaults to root
+  ---
+  duration_ms: 0.064312
+  type: 'test'
+  ...
+# Subtest: extracts a normal small project
+not ok 9 - extracts a normal small project
+  ---
+  duration_ms: 3.05075
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:1452'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: strips a single wrapping root folder (GitHub-style download)
+not ok 10 - strips a single wrapping root folder (GitHub-style download)
+  ---
+  duration_ms: 8.98736
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:1965'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: rejects absolute-path entries instead of writing outside the project
+not ok 11 - rejects absolute-path entries instead of writing outside the project
+  ---
+  duration_ms: 3.069315
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:2360'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: ignores node_modules/.git/dist entries
+not ok 12 - ignores node_modules/.git/dist entries
+  ---
+  duration_ms: 1.931034
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:2863'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: rejects a single file over the size limit
+not ok 13 - rejects a single file over the size limit
+  ---
+  duration_ms: 2.841466
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:3287'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: rejects an archive with too many files
+not ok 14 - rejects an archive with too many files
+  ---
+  duration_ms: 26.226176
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:3740'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: rejects a decompression-bomb-shaped single entry (huge ratio)
+not ok 15 - rejects a decompression-bomb-shaped single entry (huge ratio)
+  ---
+  duration_ms: 1.341107
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:4203'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787291430283:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: Framework A: plain Vite project detects as Vite
+ok 16 - Framework A: plain Vite project detects as Vite
+  ---
+  duration_ms: 1.186334
+  type: 'test'
+  ...
+# Subtest: Framework B: React + Vite detects as Vite, not misclassified
+ok 17 - Framework B: React + Vite detects as Vite, not misclassified
+  ---
+  duration_ms: 0.265478
+  type: 'test'
+  ...
+# Subtest: Framework C: SvelteKit + Vite detects as SvelteKit, not Vite
+ok 18 - Framework C: SvelteKit + Vite detects as SvelteKit, not Vite
+  ---
+  duration_ms: 0.298764
+  type: 'test'
+  ...
+# Subtest: Framework D: Nuxt + Vite detects as Nuxt, not Vite
+ok 19 - Framework D: Nuxt + Vite detects as Nuxt, not Vite
+  ---
+  duration_ms: 0.202768
+  type: 'test'
+  ...
+# Subtest: Framework E: Astro + Vite detects as Astro, not Vite
+ok 20 - Framework E: Astro + Vite detects as Astro, not Vite
+  ---
+  duration_ms: 0.2665
+  type: 'test'
+  ...
+# Subtest: Framework F: Remix + Vite detects as Remix, not Vite
+ok 21 - Framework F: Remix + Vite detects as Remix, not Vite
+  ---
+  duration_ms: 0.14573
+  type: 'test'
+  ...
+# Subtest: Framework G: Angular + incidental Vite tooling still detects as Angular
+ok 22 - Framework G: Angular + incidental Vite tooling still detects as Angular
+  ---
+  duration_ms: 0.186544
+  type: 'test'
+  ...
+# Subtest: Framework H: Next.js with a stray Vite config still detects as Next.js
+ok 23 - Framework H: Next.js with a stray Vite config still detects as Next.js
+  ---
+  duration_ms: 0.122717
+  type: 'test'
+  ...
+# Subtest: Framework I: config file with no matching dependency does not upgrade to that framework
+ok 24 - Framework I: config file with no matching dependency does not upgrade to that framework
+  ---
+  duration_ms: 0.362198
+  type: 'test'
+  ...
+# Subtest: Framework I-b: no meta-framework file or dependency evidence at all -> plain Vite
+ok 25 - Framework I-b: no meta-framework file or dependency evidence at all -> plain Vite
+  ---
+  duration_ms: 0.377744
+  type: 'test'
+  ...
+# Subtest: Framework J: project with equally strong conflicting evidence reports lower confidence
+ok 26 - Framework J: project with equally strong conflicting evidence reports lower confidence
+  ---
+  duration_ms: 0.269994
+  type: 'test'
+  ...
+# Subtest: Framework: no package.json, no config files -> null framework, zero confidence
+ok 27 - Framework: no package.json, no config files -> null framework, zero confidence
+  ---
+  duration_ms: 0.113773
+  type: 'test'
+  ...
+# Subtest: Framework: malformed package.json does not throw, falls back to file evidence
+ok 28 - Framework: malformed package.json does not throw, falls back to file evidence
+  ---
+  duration_ms: 0.107746
+  type: 'test'
+  ...
+# Subtest: Framework: dependency + own config file yields higher confidence than either alone
+ok 29 - Framework: dependency + own config file yields higher confidence than either alone
+  ---
+  duration_ms: 0.109703
+  type: 'test'
+  ...
+# Subtest: Framework: version is surfaced from package.json when available
+ok 30 - Framework: version is surfaced from package.json when available
+  ---
+  duration_ms: 0.09966
+  type: 'test'
+  ...
+# Subtest: Framework: Harbor Cargo's own package.json + next.config-equivalent detects as Next.js
+ok 31 - Framework: Harbor Cargo's own package.json + next.config-equivalent detects as Next.js
+  ---
+  duration_ms: 0.08589
+  type: 'test'
+  ...
+# Subtest: Framework: Harbor Cargo regression — real repo package.json + next.config.mjs detects as Next.js
+ok 32 - Framework: Harbor Cargo regression — real repo package.json + next.config.mjs detects as Next.js
+  ---
+  duration_ms: 0.340088
+  type: 'test'
+  ...
+# Subtest: Harbor Cargo regression: lib/pwa/service-worker.ts is not detected as an active Service Worker
+ok 33 - Harbor Cargo regression: lib/pwa/service-worker.ts is not detected as an active Service Worker
+  ---
+  duration_ms: 61.925109
+  type: 'test'
+  ...
+# Subtest: Harbor Cargo regression: existing manifest is detected and correctly linked from app/layout.tsx
+ok 34 - Harbor Cargo regression: existing manifest is detected and correctly linked from app/layout.tsx
+  ---
+  duration_ms: 7.692573
+  type: 'test'
+  ...
+# Subtest: linked manifest.json is detected with high confidence
+ok 35 - linked manifest.json is detected with high confidence
+  ---
+  duration_ms: 1.909718
+  type: 'test'
+  ...
+# Subtest: Next.js metadata.manifest reference resolves the linked manifest
+ok 36 - Next.js metadata.manifest reference resolves the linked manifest
+  ---
+  duration_ms: 0.618871
+  type: 'test'
+  ...
+# Subtest: docs/manifest.json with no relationship to the app is not treated as the application manifest
+ok 37 - docs/manifest.json with no relationship to the app is not treated as the application manifest
+  ---
+  duration_ms: 0.146522
+  type: 'test'
+  ...
+# Subtest: malformed JSON manifest is reported but not crashed on
+ok 38 - malformed JSON manifest is reported but not crashed on
+  ---
+  duration_ms: 0.233005
+  type: 'test'
+  ...
+# Subtest: multiple manifest files: linked one wins over an unlinked example
+ok 39 - multiple manifest files: linked one wins over an unlinked example
+  ---
+  duration_ms: 0.243494
+  type: 'test'
+  ...
+# Subtest: preserves a leading "use client" directive as the first statement
+ok 40 - preserves a leading "use client" directive as the first statement
+  ---
+  duration_ms: 2.255227
+  type: 'test'
+  ...
+# Subtest: handles multiline named imports without breaking them
+ok 41 - handles multiline named imports without breaking them
+  ---
+  duration_ms: 0.279995
+  type: 'test'
+  ...
+# Subtest: no directive, no imports: import still lands before JSX, not injected mid-statement
+ok 42 - no directive, no imports: import still lands before JSX, not injected mid-statement
+  ---
+  duration_ms: 0.14633
+  type: 'test'
+  ...
+# Subtest: running twice does not mount the component a second time
+ok 43 - running twice does not mount the component a second time
+  ---
+  duration_ms: 0.097046
+  type: 'test'
+  ...
+# Subtest: P0-1 Test A: app/layout.tsx manifest resolves to app/manifest.ts
+ok 44 - P0-1 Test A: app/layout.tsx manifest resolves to app/manifest.ts
+  ---
+  duration_ms: 0.852409
+  type: 'test'
+  ...
+# Subtest: P0-1 Test B: src/app/layout.tsx manifest resolves to src/app/manifest.ts
+ok 45 - P0-1 Test B: src/app/layout.tsx manifest resolves to src/app/manifest.ts
+  ---
+  duration_ms: 0.187687
+  type: 'test'
+  ...
+# Subtest: P0-1: .jsx and .js layout extensions resolve the same way
+ok 46 - P0-1: .jsx and .js layout extensions resolve the same way
+  ---
+  duration_ms: 0.084181
+  type: 'test'
+  ...
+# Subtest: P0-1 Test C: path resolution is independent of whether a manifest already exists
+ok 47 - P0-1 Test C: path resolution is independent of whether a manifest already exists
+  ---
+  duration_ms: 0.079259
+  type: 'test'
+  ...
+# Subtest: P0-1 Test D: manifest and icon files resolve under the same app root for src/app projects
+ok 48 - P0-1 Test D: manifest and icon files resolve under the same app root for src/app projects
+  ---
+  duration_ms: 0.151078
+  type: 'test'
+  ...
+# Subtest: P0-1 Test E: src/app project never resolves to a duplicate app/manifest.ts root
+ok 49 - P0-1 Test E: src/app project never resolves to a duplicate app/manifest.ts root
+  ---
+  duration_ms: 0.111822
+  type: 'test'
+  ...
+# Subtest: P0-1: appRouterDirOf handles a root-level layout with no directory component
+ok 50 - P0-1: appRouterDirOf handles a root-level layout with no directory component
+  ---
+  duration_ms: 0.0669
+  type: 'test'
+  ...
+# Subtest: P0-1: generated manifest.ts source is still well-formed regardless of app root
+ok 51 - P0-1: generated manifest.ts source is still well-formed regardless of app root
+  ---
+  duration_ms: 0.240045
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 1: no existing app config creates one safely
+ok 52 - Nuxt merge 1: no existing app config creates one safely
+  ---
+  duration_ms: 1.477201
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 2: existing app config with unrelated content merges head in, no duplicate app key
+ok 53 - Nuxt merge 2: existing app config with unrelated content merges head in, no duplicate app key
+  ---
+  duration_ms: 0.36834
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 3: existing app.head merges meta/link into it without duplicating head key
+ok 54 - Nuxt merge 3: existing app.head merges meta/link into it without duplicating head key
+  ---
+  duration_ms: 0.414475
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 4: unrelated top-level app properties survive the merge
+ok 55 - Nuxt merge 4: unrelated top-level app properties survive the merge
+  ---
+  duration_ms: 0.285168
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 5: re-running on an already-patched file is a no-op
+ok 56 - Nuxt merge 5: re-running on an already-patched file is a no-op
+  ---
+  duration_ms: 0.133762
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 5b: manually-authored equivalent theme-color/manifest link is not duplicated
+ok 57 - Nuxt merge 5b: manually-authored equivalent theme-color/manifest link is not duplicated
+  ---
+  duration_ms: 0.223304
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 6: unusual formatting (single quotes, extra whitespace) either patches safely or warns
+ok 58 - Nuxt merge 6: unusual formatting (single quotes, extra whitespace) either patches safely or warns
+  ---
+  duration_ms: 0.184033
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 7: unrecognized config shape leaves file unchanged with a warning note
+ok 59 - Nuxt merge 7: unrecognized config shape leaves file unchanged with a warning note
+  ---
+  duration_ms: 0.109166
+  type: 'test'
+  ...
+# Subtest: Nuxt merge: app value that isn't an object literal is refused, not guessed at
+ok 60 - Nuxt merge: app value that isn't an object literal is refused, not guessed at
+  ---
+  duration_ms: 0.213444
+  type: 'test'
+  ...
+# Subtest: Nuxt merge: a brace-containing string value in app doesn't confuse the scanner
+ok 61 - Nuxt merge: a brace-containing string value in app doesn't confuse the scanner
+  ---
+  duration_ms: 0.44722
+  type: 'test'
+  ...
+# Subtest: Nuxt merge: export default { ... } (no defineNuxtConfig wrapper) with existing app.head merges
+ok 62 - Nuxt merge: export default { ... } (no defineNuxtConfig wrapper) with existing app.head merges
+  ---
+  duration_ms: 0.302159
+  type: 'test'
+  ...
+# Subtest: Nuxt merge: empty existing meta/link arrays are filled in without a stray leading comma
+ok 63 - Nuxt merge: empty existing meta/link arrays are filled in without a stray leading comma
+  ---
+  duration_ms: 0.289693
+  type: 'test'
+  ...
+# Subtest: resolveIconSrc: relative src resolves against the manifest's own directory
+ok 64 - resolveIconSrc: relative src resolves against the manifest's own directory
+  ---
+  duration_ms: 1.263709
+  type: 'test'
+  ...
+# Subtest: resolveIconSrc: root-relative src resolves against assetRoot
+ok 65 - resolveIconSrc: root-relative src resolves against assetRoot
+  ---
+  duration_ms: 0.268423
+  type: 'test'
+  ...
+# Subtest: resolveIconSrc: external/data URIs are not project-local and resolve to null
+ok 66 - resolveIconSrc: external/data URIs are not project-local and resolve to null
+  ---
+  duration_ms: 0.169788
+  type: 'test'
+  ...
+# Subtest: resolveIconSrc: '..' segments walk up from the manifest directory
+ok 67 - resolveIconSrc: '..' segments walk up from the manifest directory
+  ---
+  duration_ms: 0.117092
+  type: 'test'
+  ...
+# Subtest: validateFilesystem: flags a planned CREATE/UPDATE whose target is missing from final output
+ok 68 - validateFilesystem: flags a planned CREATE/UPDATE whose target is missing from final output
+  ---
+  duration_ms: 0.558415
+  type: 'test'
+  ...
+# Subtest: validateFilesystem: flags case-collision between two final paths
+ok 69 - validateFilesystem: flags case-collision between two final paths
+  ---
+  duration_ms: 0.216161
+  type: 'test'
+  ...
+# Subtest: validateFilesystem: a normal, clean output produces no issues
+ok 70 - validateFilesystem: a normal, clean output produces no issues
+  ---
+  duration_ms: 0.209451
+  type: 'test'
+  ...
+# Subtest: mutation plan enforcement: PRESERVE violated when the file actually changed
+ok 71 - mutation plan enforcement: PRESERVE violated when the file actually changed
+  ---
+  duration_ms: 0.340473
+  type: 'test'
+  ...
+# Subtest: mutation plan enforcement: PRESERVE respected when the file is byte-identical
+ok 72 - mutation plan enforcement: PRESERVE respected when the file is byte-identical
+  ---
+  duration_ms: 0.291001
+  type: 'test'
+  ...
+# Subtest: mutation plan enforcement: a file changed with no plan entry at all is an error
+ok 73 - mutation plan enforcement: a file changed with no plan entry at all is an error
+  ---
+  duration_ms: 0.342524
+  type: 'test'
+  ...
+# Subtest: mutation plan enforcement: a new file created with no plan entry at all is an error
+ok 74 - mutation plan enforcement: a new file created with no plan entry at all is an error
+  ---
+  duration_ms: 0.173823
+  type: 'test'
+  ...
+# Subtest: mutation plan enforcement: SKIP violated when the file was actually modified
+ok 75 - mutation plan enforcement: SKIP violated when the file was actually modified
+  ---
+  duration_ms: 0.129117
+  type: 'test'
+  ...
+# Subtest: mutation plan enforcement: planned CREATE that never materialized is an error
+ok 76 - mutation plan enforcement: planned CREATE that never materialized is an error
+  ---
+  duration_ms: 0.155296
+  type: 'test'
+  ...
+# Subtest: mutation plan enforcement: planned UPDATE with no actual change is a warning, not an error
+ok 77 - mutation plan enforcement: planned UPDATE with no actual change is a warning, not an error
+  ---
+  duration_ms: 0.143907
+  type: 'test'
+  ...
+# Subtest: mutation plan enforcement: a correctly planned CREATE + UPDATE combination is clean
+ok 78 - mutation plan enforcement: a correctly planned CREATE + UPDATE combination is clean
+  ---
+  duration_ms: 0.110439
+  type: 'test'
+  ...
+# Subtest: validateManifest: valid manifest with existing icon files passes clean
+ok 79 - validateManifest: valid manifest with existing icon files passes clean
+  ---
+  duration_ms: 0.256875
+  type: 'test'
+  ...
+# Subtest: validateManifest: invalid JSON is a hard error
+ok 80 - validateManifest: invalid JSON is a hard error
+  ---
+  duration_ms: 0.21739
+  type: 'test'
+  ...
+# Subtest: validateManifest: manifest that parses but isn't an object is a hard error
+ok 81 - validateManifest: manifest that parses but isn't an object is a hard error
+  ---
+  duration_ms: 0.15404
+  type: 'test'
+  ...
+# Subtest: validateManifest: icon referencing a missing file is a hard error
+ok 82 - validateManifest: icon referencing a missing file is a hard error
+  ---
+  duration_ms: 0.15662
+  type: 'test'
+  ...
+# Subtest: validateManifest: duplicate icon src entries produce a warning
+ok 83 - validateManifest: duplicate icon src entries produce a warning
+  ---
+  duration_ms: 0.213205
+  type: 'test'
+  ...
+# Subtest: validateManifest: icons field that isn't an array is a hard error
+ok 84 - validateManifest: icons field that isn't an array is a hard error
+  ---
+  duration_ms: 0.107399
+  type: 'test'
+  ...
+# Subtest: validateManifest: Next.js file-convention manifest.ts is not JSON-parsed and passes through
+ok 85 - validateManifest: Next.js file-convention manifest.ts is not JSON-parsed and passes through
+  ---
+  duration_ms: 0.112478
+  type: 'test'
+  ...
+# Subtest: validateManifest: null manifestPath (nothing to validate) is a no-op
+ok 86 - validateManifest: null manifestPath (nothing to validate) is a no-op
+  ---
+  duration_ms: 0.072116
+  type: 'test'
+  ...
+# Subtest: validateManifest: manifest file declared but missing from final output is a hard error
+ok 87 - validateManifest: manifest file declared but missing from final output is a hard error
+  ---
+  duration_ms: 0.073462
+  type: 'test'
+  ...
+# Subtest: validateServiceWorker: registration pointing at a real SW file is clean
+ok 88 - validateServiceWorker: registration pointing at a real SW file is clean
+  ---
+  duration_ms: 3.362779
+  type: 'test'
+  ...
+# Subtest: validateServiceWorker: registration pointing at a missing SW file is a hard error
+ok 89 - validateServiceWorker: registration pointing at a missing SW file is a hard error
+  ---
+  duration_ms: 0.268406
+  type: 'test'
+  ...
+# Subtest: validateServiceWorker: dynamic registration target is not flagged as missing
+ok 90 - validateServiceWorker: dynamic registration target is not flagged as missing
+  ---
+  duration_ms: 0.170056
+  type: 'test'
+  ...
+# Subtest: validateHtml: single manifest link and single SW registration is clean
+ok 91 - validateHtml: single manifest link and single SW registration is clean
+  ---
+  duration_ms: 0.286157
+  type: 'test'
+  ...
+# Subtest: validateHtml: duplicate manifest link tags is a hard error
+ok 92 - validateHtml: duplicate manifest link tags is a hard error
+  ---
+  duration_ms: 0.098771
+  type: 'test'
+  ...
+# Subtest: validateHtml: duplicate SW registration calls is a hard error
+ok 93 - validateHtml: duplicate SW registration calls is a hard error
+  ---
+  duration_ms: 0.069614
+  type: 'test'
+  ...
+# Subtest: validateHtml: null entryHtmlPath (strategy with no head injection) is a no-op
+ok 94 - validateHtml: null entryHtmlPath (strategy with no head injection) is a no-op
+  ---
+  duration_ms: 0.062326
+  type: 'test'
+  ...
+# Subtest: validateOutput: a fully clean generation is valid with no errors
+ok 95 - validateOutput: a fully clean generation is valid with no errors
+  ---
+  duration_ms: 0.41305
+  type: 'test'
+  ...
+# Subtest: validateOutput: an unauthorized mutation makes the whole result invalid
+ok 96 - validateOutput: an unauthorized mutation makes the whole result invalid
+  ---
+  duration_ms: 0.59523
+  type: 'test'
+  ...
+# Subtest: PwaValidationError carries the failed ValidationResult and a descriptive message
+ok 97 - PwaValidationError carries the failed ValidationResult and a descriptive message
+  ---
+  duration_ms: 0.361504
+  type: 'test'
+  ...
+# Subtest: normal relative paths pass through unchanged
+ok 98 - normal relative paths pass through unchanged
+  ---
+  duration_ms: 2.320236
+  type: 'test'
+  ...
+# Subtest: rejects ../ traversal
+ok 99 - rejects ../ traversal
+  ---
+  duration_ms: 0.176237
+  type: 'test'
+  ...
+# Subtest: rejects backslash traversal (Windows-built zips)
+ok 100 - rejects backslash traversal (Windows-built zips)
+  ---
+  duration_ms: 0.094421
+  type: 'test'
+  ...
+# Subtest: rejects absolute paths
+ok 101 - rejects absolute paths
+  ---
+  duration_ms: 0.111948
+  type: 'test'
+  ...
+# Subtest: rejects Windows drive letters
+ok 102 - rejects Windows drive letters
+  ---
+  duration_ms: 0.083857
+  type: 'test'
+  ...
+# Subtest: rejects null bytes
+ok 103 - rejects null bytes
+  ---
+  duration_ms: 0.06068
+  type: 'test'
+  ...
+# Subtest: collapses redundant ./ segments harmlessly
+ok 104 - collapses redundant ./ segments harmlessly
+  ---
+  duration_ms: 0.166161
+  type: 'test'
+  ...
+# Subtest: empty or root-only entries are rejected
+ok 105 - empty or root-only entries are rejected
+  ---
+  duration_ms: 0.084955
+  type: 'test'
+  ...
+# Subtest: SW cache safety 1: GET /api/user is network-only, never cached
+ok 106 - SW cache safety 1: GET /api/user is network-only, never cached
+  ---
+  duration_ms: 2.345256
+  type: 'test'
+  ...
+# Subtest: SW cache safety 2: GET /api/orders is network-only
+ok 107 - SW cache safety 2: GET /api/orders is network-only
+  ---
+  duration_ms: 0.859148
+  type: 'test'
+  ...
+# Subtest: SW cache safety 3: private/authenticated route is not served cache-first
+ok 108 - SW cache safety 3: private/authenticated route is not served cache-first
+  ---
+  duration_ms: 1.147817
+  type: 'test'
+  ...
+# Subtest: SW cache safety 4: static JS is cached
+ok 109 - SW cache safety 4: static JS is cached
+  ---
+  duration_ms: 1.248289
+  type: 'test'
+  ...
+# Subtest: SW cache safety 5: static CSS is cached
+ok 110 - SW cache safety 5: static CSS is cached
+  ---
+  duration_ms: 0.763122
+  type: 'test'
+  ...
+# Subtest: SW cache safety 6: image is cached
+ok 111 - SW cache safety 6: image is cached
+  ---
+  duration_ms: 0.788774
+  type: 'test'
+  ...
+# Subtest: SW cache safety 7: POST requests are never cached and pass through
+ok 112 - SW cache safety 7: POST requests are never cached and pass through
+  ---
+  duration_ms: 0.780571
+  type: 'test'
+  ...
+# Subtest: SW cache safety 8: Cache-Control: private response is not cached
+ok 113 - SW cache safety 8: Cache-Control: private response is not cached
+  ---
+  duration_ms: 0.854504
+  type: 'test'
+  ...
+# Subtest: SW cache safety 9: Cache-Control: no-store response is not cached
+ok 114 - SW cache safety 9: Cache-Control: no-store response is not cached
+  ---
+  duration_ms: 1.113297
+  type: 'test'
+  ...
+# Subtest: SW cache safety 10: generic unknown GET route uses network-first and caches only a safe response
+ok 115 - SW cache safety 10: generic unknown GET route uses network-first and caches only a safe response
+  ---
+  duration_ms: 1.05599
+  type: 'test'
+  ...
+# Subtest: SW cache safety: cross-origin requests are never intercepted
+ok 116 - SW cache safety: cross-origin requests are never intercepted
+  ---
+  duration_ms: 0.713749
+  type: 'test'
+  ...
+# Subtest: SW cache safety: a 500 error response is never cached
+ok 117 - SW cache safety: a 500 error response is never cached
+  ---
+  duration_ms: 0.875754
+  type: 'test'
+  ...
+# Subtest: SW cache safety: offline fallback still works for a previously-cached static asset
+ok 118 - SW cache safety: offline fallback still works for a previously-cached static asset
+  ---
+  duration_ms: 0.7897
+  type: 'test'
+  ...
+# Subtest: SW cache safety: static JS with an Authorization header is network-only, never cached
+ok 119 - SW cache safety: static JS with an Authorization header is network-only, never cached
+  ---
+  duration_ms: 0.757275
+  type: 'test'
+  ...
+# Subtest: SW cache safety: static image with an Authorization header is network-only, never cached
+ok 120 - SW cache safety: static image with an Authorization header is network-only, never cached
+  ---
+  duration_ms: 0.631877
+  type: 'test'
+  ...
+# Subtest: SW cache safety: request with credentials: 'include' is network-only, never cached
+ok 121 - SW cache safety: request with credentials: 'include' is network-only, never cached
+  ---
+  duration_ms: 0.774244
+  type: 'test'
+  ...
+# Subtest: SW cache safety: a static asset with no credential signal is still cached (no regression)
+ok 122 - SW cache safety: a static asset with no credential signal is still cached (no regression)
+  ---
+  duration_ms: 0.782503
+  type: 'test'
+  ...
+# Subtest: real service worker at public/service-worker.js is detected as likely-service-worker and active when registered
+ok 123 - real service worker at public/service-worker.js is detected as likely-service-worker and active when registered
+  ---
+  duration_ms: 3.397688
+  type: 'test'
+  ...
+# Subtest: generator source that only builds SW code inside a template literal is NOT detected as an active SW
+ok 124 - generator source that only builds SW code inside a template literal is NOT detected as an active SW
+  ---
+  duration_ms: 1.046633
+  type: 'test'
+  ...
+# Subtest: adversarial fixtures: docs/examples/tests sw.js files are not treated as authoritative
+ok 125 - adversarial fixtures: docs/examples/tests sw.js files are not treated as authoritative
+  ---
+  duration_ms: 0.501461
+  type: 'test'
+  ...
+# Subtest: SW file exists but no registration found -> not treated as active (case D)
+ok 126 - SW file exists but no registration found -> not treated as active (case D)
+  ---
+  duration_ms: 5.009956
+  type: 'test'
+  ...
+# Subtest: registration exists but target file missing -> reported as broken, not crashing (case B)
+ok 127 - registration exists but target file missing -> reported as broken, not crashing (case B)
+  ---
+  duration_ms: 0.412882
+  type: 'test'
+  ...
+# Subtest: registration pointing at a custom-named SW is respected (case C) — not forced to /service-worker.js
+ok 128 - registration pointing at a custom-named SW is respected (case C) — not forced to /service-worker.js
+  ---
+  duration_ms: 0.2725
+  type: 'test'
+  ...
+# Subtest: registration call that only exists inside a generated template string is ignored
+ok 129 - registration call that only exists inside a generated template string is ignored
+  ---
+  duration_ms: 0.349635
+  type: 'test'
+  ...
+1..129
+# tests 129
+# suites 0
+# pass 122
+# fail 7
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3256.82761

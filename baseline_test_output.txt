@@ -1,0 +1,661 @@
+TAP version 13
+# Subtest: normalizeBasePath: null/undefined/empty all mean root
+ok 1 - normalizeBasePath: null/undefined/empty all mean root
+  ---
+  duration_ms: 1.796652
+  type: 'test'
+  ...
+# Subtest: normalizeBasePath: adds leading and trailing slash
+ok 2 - normalizeBasePath: adds leading and trailing slash
+  ---
+  duration_ms: 0.222059
+  type: 'test'
+  ...
+# Subtest: normalizeBasePath: collapses duplicate slashes
+ok 3 - normalizeBasePath: collapses duplicate slashes
+  ---
+  duration_ms: 0.092406
+  type: 'test'
+  ...
+# Subtest: resolvePublicPath: root base, no leading slash on asset
+ok 4 - resolvePublicPath: root base, no leading slash on asset
+  ---
+  duration_ms: 0.127071
+  type: 'test'
+  ...
+# Subtest: resolvePublicPath: root base, asset already has leading slash
+ok 5 - resolvePublicPath: root base, asset already has leading slash
+  ---
+  duration_ms: 0.09536
+  type: 'test'
+  ...
+# Subtest: resolvePublicPath: subpath base
+ok 6 - resolvePublicPath: subpath base
+  ---
+  duration_ms: 0.086151
+  type: 'test'
+  ...
+# Subtest: resolvePublicPath: subpath base with asset that has a leading slash
+ok 7 - resolvePublicPath: subpath base with asset that has a leading slash
+  ---
+  duration_ms: 0.091042
+  type: 'test'
+  ...
+# Subtest: resolvePublicPath: null/undefined base defaults to root
+ok 8 - resolvePublicPath: null/undefined base defaults to root
+  ---
+  duration_ms: 0.106958
+  type: 'test'
+  ...
+# Subtest: extracts a normal small project
+not ok 9 - extracts a normal small project
+  ---
+  duration_ms: 2.712113
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:1452'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: strips a single wrapping root folder (GitHub-style download)
+not ok 10 - strips a single wrapping root folder (GitHub-style download)
+  ---
+  duration_ms: 1.143783
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:1965'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: rejects absolute-path entries instead of writing outside the project
+not ok 11 - rejects absolute-path entries instead of writing outside the project
+  ---
+  duration_ms: 0.853196
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:2360'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: ignores node_modules/.git/dist entries
+not ok 12 - ignores node_modules/.git/dist entries
+  ---
+  duration_ms: 0.970518
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:2863'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: rejects a single file over the size limit
+not ok 13 - rejects a single file over the size limit
+  ---
+  duration_ms: 21.817977
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:3287'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: rejects an archive with too many files
+not ok 14 - rejects an archive with too many files
+  ---
+  duration_ms: 12.997763
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:3740'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: rejects a decompression-bomb-shaped single entry (huge ratio)
+not ok 15 - rejects a decompression-bomb-shaped single entry (huge ratio)
+  ---
+  duration_ms: 0.923614
+  type: 'test'
+  location: '/home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts:2:4203'
+  failureType: 'testCodeFailure'
+  error: "Cannot find package 'jszip' imported from /home/claude/harbor/lib/pwa/__tests__/client-zip.test.ts"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    packageResolve (node:internal/modules/esm/resolve:768:81)
+    moduleResolve (node:internal/modules/esm/resolve:855:18)
+    defaultResolve (node:internal/modules/esm/resolve:985:11)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+    resolveBase (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:3744)
+    resolveDirectory (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4243)
+    resolveTsPaths (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:4984)
+    resolve (file:///home/claude/.npm-global/lib/node_modules/tsx/dist/esm/index.mjs?1787290040828:2:5361)
+    nextResolve (node:internal/modules/esm/hooks:748:28)
+  ...
+# Subtest: Framework A: plain Vite project detects as Vite
+ok 16 - Framework A: plain Vite project detects as Vite
+  ---
+  duration_ms: 1.221943
+  type: 'test'
+  ...
+# Subtest: Framework B: React + Vite detects as Vite, not misclassified
+ok 17 - Framework B: React + Vite detects as Vite, not misclassified
+  ---
+  duration_ms: 0.200856
+  type: 'test'
+  ...
+# Subtest: Framework C: SvelteKit + Vite detects as SvelteKit, not Vite
+ok 18 - Framework C: SvelteKit + Vite detects as SvelteKit, not Vite
+  ---
+  duration_ms: 0.213963
+  type: 'test'
+  ...
+# Subtest: Framework D: Nuxt + Vite detects as Nuxt, not Vite
+ok 19 - Framework D: Nuxt + Vite detects as Nuxt, not Vite
+  ---
+  duration_ms: 0.162175
+  type: 'test'
+  ...
+# Subtest: Framework E: Astro + Vite detects as Astro, not Vite
+ok 20 - Framework E: Astro + Vite detects as Astro, not Vite
+  ---
+  duration_ms: 0.226699
+  type: 'test'
+  ...
+# Subtest: Framework F: Remix + Vite detects as Remix, not Vite
+ok 21 - Framework F: Remix + Vite detects as Remix, not Vite
+  ---
+  duration_ms: 0.161524
+  type: 'test'
+  ...
+# Subtest: Framework G: Angular + incidental Vite tooling still detects as Angular
+ok 22 - Framework G: Angular + incidental Vite tooling still detects as Angular
+  ---
+  duration_ms: 0.177352
+  type: 'test'
+  ...
+# Subtest: Framework H: Next.js with a stray Vite config still detects as Next.js
+ok 23 - Framework H: Next.js with a stray Vite config still detects as Next.js
+  ---
+  duration_ms: 0.169507
+  type: 'test'
+  ...
+# Subtest: Framework I: config file with no matching dependency does not upgrade to that framework
+ok 24 - Framework I: config file with no matching dependency does not upgrade to that framework
+  ---
+  duration_ms: 0.371741
+  type: 'test'
+  ...
+# Subtest: Framework I-b: no meta-framework file or dependency evidence at all -> plain Vite
+ok 25 - Framework I-b: no meta-framework file or dependency evidence at all -> plain Vite
+  ---
+  duration_ms: 0.382392
+  type: 'test'
+  ...
+# Subtest: Framework J: project with equally strong conflicting evidence reports lower confidence
+ok 26 - Framework J: project with equally strong conflicting evidence reports lower confidence
+  ---
+  duration_ms: 0.21139
+  type: 'test'
+  ...
+# Subtest: Framework: no package.json, no config files -> null framework, zero confidence
+ok 27 - Framework: no package.json, no config files -> null framework, zero confidence
+  ---
+  duration_ms: 0.095321
+  type: 'test'
+  ...
+# Subtest: Framework: malformed package.json does not throw, falls back to file evidence
+ok 28 - Framework: malformed package.json does not throw, falls back to file evidence
+  ---
+  duration_ms: 0.152378
+  type: 'test'
+  ...
+# Subtest: Framework: dependency + own config file yields higher confidence than either alone
+ok 29 - Framework: dependency + own config file yields higher confidence than either alone
+  ---
+  duration_ms: 0.11743
+  type: 'test'
+  ...
+# Subtest: Framework: version is surfaced from package.json when available
+ok 30 - Framework: version is surfaced from package.json when available
+  ---
+  duration_ms: 0.077451
+  type: 'test'
+  ...
+# Subtest: Framework: Harbor Cargo's own package.json + next.config-equivalent detects as Next.js
+ok 31 - Framework: Harbor Cargo's own package.json + next.config-equivalent detects as Next.js
+  ---
+  duration_ms: 0.102736
+  type: 'test'
+  ...
+# Subtest: Framework: Harbor Cargo regression — real repo package.json + next.config.mjs detects as Next.js
+ok 32 - Framework: Harbor Cargo regression — real repo package.json + next.config.mjs detects as Next.js
+  ---
+  duration_ms: 0.247321
+  type: 'test'
+  ...
+# Subtest: Harbor Cargo regression: lib/pwa/service-worker.ts is not detected as an active Service Worker
+ok 33 - Harbor Cargo regression: lib/pwa/service-worker.ts is not detected as an active Service Worker
+  ---
+  duration_ms: 62.564962
+  type: 'test'
+  ...
+# Subtest: Harbor Cargo regression: existing manifest is detected and correctly linked from app/layout.tsx
+ok 34 - Harbor Cargo regression: existing manifest is detected and correctly linked from app/layout.tsx
+  ---
+  duration_ms: 7.389352
+  type: 'test'
+  ...
+# Subtest: linked manifest.json is detected with high confidence
+ok 35 - linked manifest.json is detected with high confidence
+  ---
+  duration_ms: 1.927185
+  type: 'test'
+  ...
+# Subtest: Next.js metadata.manifest reference resolves the linked manifest
+ok 36 - Next.js metadata.manifest reference resolves the linked manifest
+  ---
+  duration_ms: 0.60785
+  type: 'test'
+  ...
+# Subtest: docs/manifest.json with no relationship to the app is not treated as the application manifest
+ok 37 - docs/manifest.json with no relationship to the app is not treated as the application manifest
+  ---
+  duration_ms: 0.229452
+  type: 'test'
+  ...
+# Subtest: malformed JSON manifest is reported but not crashed on
+ok 38 - malformed JSON manifest is reported but not crashed on
+  ---
+  duration_ms: 0.269452
+  type: 'test'
+  ...
+# Subtest: multiple manifest files: linked one wins over an unlinked example
+ok 39 - multiple manifest files: linked one wins over an unlinked example
+  ---
+  duration_ms: 0.290181
+  type: 'test'
+  ...
+# Subtest: preserves a leading "use client" directive as the first statement
+ok 40 - preserves a leading "use client" directive as the first statement
+  ---
+  duration_ms: 2.135826
+  type: 'test'
+  ...
+# Subtest: handles multiline named imports without breaking them
+ok 41 - handles multiline named imports without breaking them
+  ---
+  duration_ms: 0.232897
+  type: 'test'
+  ...
+# Subtest: no directive, no imports: import still lands before JSX, not injected mid-statement
+ok 42 - no directive, no imports: import still lands before JSX, not injected mid-statement
+  ---
+  duration_ms: 0.100244
+  type: 'test'
+  ...
+# Subtest: running twice does not mount the component a second time
+ok 43 - running twice does not mount the component a second time
+  ---
+  duration_ms: 0.107388
+  type: 'test'
+  ...
+# Subtest: P0-1 Test A: app/layout.tsx manifest resolves to app/manifest.ts
+ok 44 - P0-1 Test A: app/layout.tsx manifest resolves to app/manifest.ts
+  ---
+  duration_ms: 0.620728
+  type: 'test'
+  ...
+# Subtest: P0-1 Test B: src/app/layout.tsx manifest resolves to src/app/manifest.ts
+ok 45 - P0-1 Test B: src/app/layout.tsx manifest resolves to src/app/manifest.ts
+  ---
+  duration_ms: 0.108682
+  type: 'test'
+  ...
+# Subtest: P0-1: .jsx and .js layout extensions resolve the same way
+ok 46 - P0-1: .jsx and .js layout extensions resolve the same way
+  ---
+  duration_ms: 0.071946
+  type: 'test'
+  ...
+# Subtest: P0-1 Test C: path resolution is independent of whether a manifest already exists
+ok 47 - P0-1 Test C: path resolution is independent of whether a manifest already exists
+  ---
+  duration_ms: 0.065897
+  type: 'test'
+  ...
+# Subtest: P0-1 Test D: manifest and icon files resolve under the same app root for src/app projects
+ok 48 - P0-1 Test D: manifest and icon files resolve under the same app root for src/app projects
+  ---
+  duration_ms: 0.124873
+  type: 'test'
+  ...
+# Subtest: P0-1 Test E: src/app project never resolves to a duplicate app/manifest.ts root
+ok 49 - P0-1 Test E: src/app project never resolves to a duplicate app/manifest.ts root
+  ---
+  duration_ms: 0.104125
+  type: 'test'
+  ...
+# Subtest: P0-1: appRouterDirOf handles a root-level layout with no directory component
+ok 50 - P0-1: appRouterDirOf handles a root-level layout with no directory component
+  ---
+  duration_ms: 0.059996
+  type: 'test'
+  ...
+# Subtest: P0-1: generated manifest.ts source is still well-formed regardless of app root
+ok 51 - P0-1: generated manifest.ts source is still well-formed regardless of app root
+  ---
+  duration_ms: 0.159343
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 1: no existing app config creates one safely
+ok 52 - Nuxt merge 1: no existing app config creates one safely
+  ---
+  duration_ms: 1.147689
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 2: existing app config with unrelated content merges head in, no duplicate app key
+ok 53 - Nuxt merge 2: existing app config with unrelated content merges head in, no duplicate app key
+  ---
+  duration_ms: 0.271412
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 3: existing app.head merges meta/link into it without duplicating head key
+ok 54 - Nuxt merge 3: existing app.head merges meta/link into it without duplicating head key
+  ---
+  duration_ms: 0.311514
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 4: unrelated top-level app properties survive the merge
+ok 55 - Nuxt merge 4: unrelated top-level app properties survive the merge
+  ---
+  duration_ms: 0.227952
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 5: re-running on an already-patched file is a no-op
+ok 56 - Nuxt merge 5: re-running on an already-patched file is a no-op
+  ---
+  duration_ms: 0.103714
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 5b: manually-authored equivalent theme-color/manifest link is not duplicated
+ok 57 - Nuxt merge 5b: manually-authored equivalent theme-color/manifest link is not duplicated
+  ---
+  duration_ms: 0.261685
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 6: unusual formatting (single quotes, extra whitespace) either patches safely or warns
+ok 58 - Nuxt merge 6: unusual formatting (single quotes, extra whitespace) either patches safely or warns
+  ---
+  duration_ms: 0.184721
+  type: 'test'
+  ...
+# Subtest: Nuxt merge 7: unrecognized config shape leaves file unchanged with a warning note
+ok 59 - Nuxt merge 7: unrecognized config shape leaves file unchanged with a warning note
+  ---
+  duration_ms: 0.088262
+  type: 'test'
+  ...
+# Subtest: Nuxt merge: app value that isn't an object literal is refused, not guessed at
+ok 60 - Nuxt merge: app value that isn't an object literal is refused, not guessed at
+  ---
+  duration_ms: 0.182864
+  type: 'test'
+  ...
+# Subtest: Nuxt merge: a brace-containing string value in app doesn't confuse the scanner
+ok 61 - Nuxt merge: a brace-containing string value in app doesn't confuse the scanner
+  ---
+  duration_ms: 0.33312
+  type: 'test'
+  ...
+# Subtest: Nuxt merge: export default { ... } (no defineNuxtConfig wrapper) with existing app.head merges
+ok 62 - Nuxt merge: export default { ... } (no defineNuxtConfig wrapper) with existing app.head merges
+  ---
+  duration_ms: 0.241593
+  type: 'test'
+  ...
+# Subtest: Nuxt merge: empty existing meta/link arrays are filled in without a stray leading comma
+ok 63 - Nuxt merge: empty existing meta/link arrays are filled in without a stray leading comma
+  ---
+  duration_ms: 0.192335
+  type: 'test'
+  ...
+# Subtest: normal relative paths pass through unchanged
+ok 64 - normal relative paths pass through unchanged
+  ---
+  duration_ms: 2.026254
+  type: 'test'
+  ...
+# Subtest: rejects ../ traversal
+ok 65 - rejects ../ traversal
+  ---
+  duration_ms: 0.176021
+  type: 'test'
+  ...
+# Subtest: rejects backslash traversal (Windows-built zips)
+ok 66 - rejects backslash traversal (Windows-built zips)
+  ---
+  duration_ms: 0.105626
+  type: 'test'
+  ...
+# Subtest: rejects absolute paths
+ok 67 - rejects absolute paths
+  ---
+  duration_ms: 0.139892
+  type: 'test'
+  ...
+# Subtest: rejects Windows drive letters
+ok 68 - rejects Windows drive letters
+  ---
+  duration_ms: 0.100119
+  type: 'test'
+  ...
+# Subtest: rejects null bytes
+ok 69 - rejects null bytes
+  ---
+  duration_ms: 0.067221
+  type: 'test'
+  ...
+# Subtest: collapses redundant ./ segments harmlessly
+ok 70 - collapses redundant ./ segments harmlessly
+  ---
+  duration_ms: 0.134372
+  type: 'test'
+  ...
+# Subtest: empty or root-only entries are rejected
+ok 71 - empty or root-only entries are rejected
+  ---
+  duration_ms: 0.074963
+  type: 'test'
+  ...
+# Subtest: SW cache safety 1: GET /api/user is network-only, never cached
+ok 72 - SW cache safety 1: GET /api/user is network-only, never cached
+  ---
+  duration_ms: 1.989151
+  type: 'test'
+  ...
+# Subtest: SW cache safety 2: GET /api/orders is network-only
+ok 73 - SW cache safety 2: GET /api/orders is network-only
+  ---
+  duration_ms: 0.748674
+  type: 'test'
+  ...
+# Subtest: SW cache safety 3: private/authenticated route is not served cache-first
+ok 74 - SW cache safety 3: private/authenticated route is not served cache-first
+  ---
+  duration_ms: 0.995664
+  type: 'test'
+  ...
+# Subtest: SW cache safety 4: static JS is cached
+ok 75 - SW cache safety 4: static JS is cached
+  ---
+  duration_ms: 0.997574
+  type: 'test'
+  ...
+# Subtest: SW cache safety 5: static CSS is cached
+ok 76 - SW cache safety 5: static CSS is cached
+  ---
+  duration_ms: 0.686535
+  type: 'test'
+  ...
+# Subtest: SW cache safety 6: image is cached
+ok 77 - SW cache safety 6: image is cached
+  ---
+  duration_ms: 0.77952
+  type: 'test'
+  ...
+# Subtest: SW cache safety 7: POST requests are never cached and pass through
+ok 78 - SW cache safety 7: POST requests are never cached and pass through
+  ---
+  duration_ms: 0.682072
+  type: 'test'
+  ...
+# Subtest: SW cache safety 8: Cache-Control: private response is not cached
+ok 79 - SW cache safety 8: Cache-Control: private response is not cached
+  ---
+  duration_ms: 0.676895
+  type: 'test'
+  ...
+# Subtest: SW cache safety 9: Cache-Control: no-store response is not cached
+ok 80 - SW cache safety 9: Cache-Control: no-store response is not cached
+  ---
+  duration_ms: 0.907535
+  type: 'test'
+  ...
+# Subtest: SW cache safety 10: generic unknown GET route uses network-first and caches only a safe response
+ok 81 - SW cache safety 10: generic unknown GET route uses network-first and caches only a safe response
+  ---
+  duration_ms: 0.962641
+  type: 'test'
+  ...
+# Subtest: SW cache safety: cross-origin requests are never intercepted
+ok 82 - SW cache safety: cross-origin requests are never intercepted
+  ---
+  duration_ms: 0.697587
+  type: 'test'
+  ...
+# Subtest: SW cache safety: a 500 error response is never cached
+ok 83 - SW cache safety: a 500 error response is never cached
+  ---
+  duration_ms: 0.623961
+  type: 'test'
+  ...
+# Subtest: SW cache safety: offline fallback still works for a previously-cached static asset
+ok 84 - SW cache safety: offline fallback still works for a previously-cached static asset
+  ---
+  duration_ms: 0.674441
+  type: 'test'
+  ...
+# Subtest: real service worker at public/service-worker.js is detected as likely-service-worker and active when registered
+ok 85 - real service worker at public/service-worker.js is detected as likely-service-worker and active when registered
+  ---
+  duration_ms: 2.576648
+  type: 'test'
+  ...
+# Subtest: generator source that only builds SW code inside a template literal is NOT detected as an active SW
+ok 86 - generator source that only builds SW code inside a template literal is NOT detected as an active SW
+  ---
+  duration_ms: 0.68401
+  type: 'test'
+  ...
+# Subtest: adversarial fixtures: docs/examples/tests sw.js files are not treated as authoritative
+ok 87 - adversarial fixtures: docs/examples/tests sw.js files are not treated as authoritative
+  ---
+  duration_ms: 0.329733
+  type: 'test'
+  ...
+# Subtest: SW file exists but no registration found -> not treated as active (case D)
+ok 88 - SW file exists but no registration found -> not treated as active (case D)
+  ---
+  duration_ms: 3.476159
+  type: 'test'
+  ...
+# Subtest: registration exists but target file missing -> reported as broken, not crashing (case B)
+ok 89 - registration exists but target file missing -> reported as broken, not crashing (case B)
+  ---
+  duration_ms: 0.242815
+  type: 'test'
+  ...
+# Subtest: registration pointing at a custom-named SW is respected (case C) — not forced to /service-worker.js
+ok 90 - registration pointing at a custom-named SW is respected (case C) — not forced to /service-worker.js
+  ---
+  duration_ms: 0.199292
+  type: 'test'
+  ...
+# Subtest: registration call that only exists inside a generated template string is ignored
+ok 91 - registration call that only exists inside a generated template string is ignored
+  ---
+  duration_ms: 0.286222
+  type: 'test'
+  ...
+1..91
+# tests 91
+# suites 0
+# pass 84
+# fail 7
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2542.103503

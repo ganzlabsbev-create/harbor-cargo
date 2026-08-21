@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.18.0";
+export const APP_VERSION = "0.20.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,34 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.20.0",
+    date: "2026-08",
+    notes: [
+      "Harbor PWA: fixed generated manifest.ts landing at a hardcoded app/manifest.ts even for src/app projects, which created a second, unserved app/ root — it now always follows the same App Router root as layout.tsx.",
+      "Harbor PWA: framework detection no longer misclassifies SvelteKit/Nuxt/Astro/Remix projects as plain Vite just because they also ship a vite.config.* file — a project's own framework-specific dependency/config evidence now always outranks generic Vite evidence.",
+      "Harbor PWA: the generated service worker no longer cache-first's everything — /api/* requests, non-GET requests, and any response marked Cache-Control: private or no-store are now never cached; only static assets stay cache-first, everything else is network-first.",
+      "Harbor PWA: patching an existing Nuxt project's nuxt.config no longer risks a duplicate/overwritten app key — it now merges into an existing app.head (preserving unrelated app/head properties) instead of always inserting a fresh block, and refuses to touch shapes it can't safely parse.",
+    ],
+  },
+  {
+    version: "0.19.1",
+    date: "2026-08",
+    notes: [
+      "Harbor PWA (internal): all generated manifest/service-worker/icon URLs now go through one shared path resolver instead of being hardcoded per framework strategy — no visible behavior change yet, but it's the groundwork for upcoming base-path-aware framework support (Vite subpath deploys, Next basePath, etc).",
+    ],
+  },
+  {
+    version: "0.19.0",
+    date: "2026-08",
+    notes: [
+      "Harbor PWA now supports build-step projects, not just static HTML/CSS/JS — Vite, Create React App, Angular, SvelteKit, Astro, Gatsby, and Remix get their manifest/icons/service worker wired into the project's real entry file automatically.",
+      "Harbor PWA now supports Next.js fully: App Router projects use Next's own icon/manifest file conventions plus a small service-worker component, and Pages Router projects get a pages/_document.tsx created automatically if one doesn't exist yet.",
+      "Harbor PWA now supports Nuxt 3 — patches nuxt.config's app.head for the manifest/theme-color/icon tags and adds a client plugin to register the service worker.",
+      "Harbor PWA: fixed generated icons/manifest landing outside Vite's public/ folder, where the build would never have picked them up.",
+      "Harbor PWA: when a project can't be wired up fully automatically, the result screen now lists exactly what's left to finish by hand instead of failing silently.",
+    ],
+  },
   {
     version: "0.18.0",
     date: "2026-08",

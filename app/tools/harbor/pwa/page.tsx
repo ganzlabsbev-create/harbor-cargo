@@ -18,6 +18,7 @@ import { useLang } from "@/lib/i18n-context";
 import { extractZipClient, type ClientFile } from "@/lib/client-zip";
 import { analyzeProject, formatBytes } from "@/lib/pwa/analyze";
 import { generatePwaPackage, downloadBlob } from "@/lib/pwa/build";
+import { PwaValidationError } from "@/lib/pwa/validate";
 import { loadIconFromFile, isAcceptedIconFile } from "@/lib/pwa/icons";
 import type { ProjectAnalysis, PwaFormState, GenerateStep, DisplayMode } from "@/lib/pwa/types";
 
@@ -40,6 +41,19 @@ const STEP_LABEL_KEY: Record<GenerateStep, string> = {
   packaging: "pwa_progress_packaging",
 };
 
+function strategyLabelKey(strategy: ProjectAnalysis["strategy"]): any {
+  switch (strategy) {
+    case "next-app-router":
+      return "pwa_strategy_next_app_router";
+    case "nuxt3":
+      return "pwa_strategy_nuxt3";
+    case "html-shell":
+      return "pwa_strategy_html_shell";
+    default:
+      return "pwa_strategy_unsupported";
+  }
+}
+
 export default function HarborPwaPage() {
   const { t } = useLang();
 
@@ -59,7 +73,7 @@ export default function HarborPwaPage() {
 
   const [genStep, setGenStep] = useState<GenerateStep | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ zipBlob: Blob; added: string[]; updated: string[] } | null>(null);
+  const [result, setResult] = useState<{ zipBlob: Blob; added: string[]; updated: string[]; unchanged: string[]; manualSteps: string[] } | null>(null);
 
   const zipInputRef = useRef<HTMLInputElement>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
@@ -76,8 +90,9 @@ export default function HarborPwaPage() {
       if (parsed.length === 0) throw new Error("empty");
 
       const a = analyzeProject(parsed);
-      if (!a.entryHtmlPath) {
-        setLoadError(t("pwa_error_no_html"));
+      if (a.strategy === "unsupported") {
+        const key = "pwa_error_unsupported_" + (a.strategyNote || "no_shell_found");
+        setLoadError(t(key as any));
         return;
       }
 
@@ -95,6 +110,7 @@ export default function HarborPwaPage() {
         display: "standalone",
         replaceManifest: false,
         replaceServiceWorker: false,
+        replaceIcons: false,
       });
       setPhase("loaded");
     } catch {
@@ -162,8 +178,12 @@ export default function HarborPwaPage() {
       });
       setResult(res);
       setPhase("done");
-    } catch {
-      setGenError(t("pwa_error_invalid_zip"));
+    } catch (e) {
+      // §15: don't collapse every failure into the same generic message —
+      // OutputValidator rejections are a known, expected outcome (Harbor
+      // chose not to ship a bad ZIP), not an unexpected crash, and the
+      // original project was never touched in that case.
+      setGenError(e instanceof PwaValidationError ? t("pwa_error_generation_validation_failed") : t("pwa_error_invalid_zip"));
       setPhase("loaded");
     }
   }
@@ -241,7 +261,11 @@ export default function HarborPwaPage() {
                 {t("pwa_detected_label")}: <span className="font-medium text-ink">{analysis.framework || "—"}</span>
               </p>
               <p className="text-xs text-ink-dim">
-                {t("pwa_entry_html_label")}: <span className="font-medium text-ink">{analysis.entryHtmlPath}</span>
+                {t("pwa_strategy_label")}: <span className="font-medium text-ink">{t(strategyLabelKey(analysis.strategy))}</span>
+              </p>
+              <p className="text-xs text-ink-dim">
+                {t("pwa_touches_label")}:{" "}
+                <span className="font-medium text-ink">{analysis.entryHtmlPath || analysis.configFilePath || "—"}</span>
               </p>
             </div>
 
@@ -365,6 +389,15 @@ export default function HarborPwaPage() {
                 onChange={(v) => updateForm({ replaceServiceWorker: v })}
               />
             )}
+            {analysis.hasIcons && (
+              <ToggleCard
+                title={t("pwa_existing_icons_detected")}
+                keepLabel={t("pwa_keep_icons")}
+                replaceLabel={t("pwa_replace_icons")}
+                value={form.replaceIcons}
+                onChange={(v) => updateForm({ replaceIcons: v })}
+              />
+            )}
 
             {genError && <p className="text-sm text-accent-red">{genError}</p>}
 
@@ -423,6 +456,22 @@ export default function HarborPwaPage() {
             )}
             {result.updated.length > 0 && (
               <FileList title={t("pwa_files_updated")} files={result.updated} prefix="~" className="text-harbor-blue" />
+            )}
+            {result.unchanged.length > 0 && (
+              <FileList title={t("pwa_files_unchanged")} files={result.unchanged} prefix="=" className="text-ink-muted" />
+            )}
+
+            {result.manualSteps.length > 0 && (
+              <div className="flex flex-col gap-2 rounded-2xl border border-accent-orange/30 bg-accent-orange/5 p-4">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-accent-orange">
+                  <TriangleAlert size={13} /> {t("pwa_manual_steps_title")}
+                </p>
+                <ul className="flex flex-col gap-1 text-xs text-accent-orange">
+                  {result.manualSteps.map((key) => (
+                    <li key={key}>· {t(("pwa_manual_" + key) as any)}</li>
+                  ))}
+                </ul>
+              </div>
             )}
 
             <button
@@ -529,7 +578,7 @@ function StatusCard({ analysis, t }: { analysis: ProjectAnalysis; t: (k: any) =>
         <StatusRow label={t("pwa_status_manifest")} ok={!!analysis.existingManifestPath} />
         <StatusRow label={t("pwa_status_icons")} ok={analysis.hasIcons} />
         <StatusRow label={t("pwa_status_sw")} ok={!!analysis.existingServiceWorkerPath} />
-        <StatusRow label={t("pwa_status_html")} ok={!!analysis.entryHtmlPath} />
+        <StatusRow label={t("pwa_status_html")} ok={analysis.strategy !== "unsupported"} />
       </div>
     </div>
   );

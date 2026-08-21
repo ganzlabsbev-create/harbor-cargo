@@ -1,42 +1,47 @@
 import type { ClientFile } from "@/lib/client-zip";
-import type { ProjectAnalysis } from "./types";
+import type { ProjectAnalysis, PwaStrategy } from "./types";
+import { detectServiceWorker, type ProjectTextFile } from "./detect/service-worker-detect";
+import { detectManifest } from "./detect/manifest";
+import { detectFramework } from "./detect/framework";
 
-// Mirrors lib/framework-detect.ts, but works off an in-memory file list
-// (ClientFile[]) instead of the filesystem, since Harbor PWA never uploads
-// the project to Harbor's server — everything happens in the browser.
-const CONFIG_SIGNATURES: Array<{ file: string; framework: string }> = [
-  { file: "next.config.js", framework: "Next.js" },
-  { file: "next.config.mjs", framework: "Next.js" },
-  { file: "next.config.ts", framework: "Next.js" },
-  { file: "vite.config.js", framework: "Vite" },
-  { file: "vite.config.ts", framework: "Vite" },
-  { file: "angular.json", framework: "Angular" },
-  { file: "svelte.config.js", framework: "SvelteKit" },
-  { file: "nuxt.config.js", framework: "Nuxt" },
-  { file: "nuxt.config.ts", framework: "Nuxt" },
-  { file: "astro.config.mjs", framework: "Astro" },
-  { file: "gatsby-config.js", framework: "Gatsby" },
-  { file: "remix.config.js", framework: "Remix" },
-];
+// NOTE: this used to mirror lib/framework-detect.ts's flat "first matching
+// signature wins" list. That approach misclassified any Vite-based
+// meta-framework (SvelteKit/Nuxt/Astro/Remix) that also ships a
+// vite.config.* file as plain "Vite", since vite.config.* was checked
+// before the meta-framework's own signature. Framework detection for the
+// PWA engine now goes through detectFramework() (./detect/framework.ts),
+// which weighs framework-specific evidence over generic Vite evidence
+// regardless of file order. lib/framework-detect.ts (used for deploy/build
+// tooling elsewhere in the app) is a separate, pre-existing module and is
+// out of scope for this pass.
 
-const DEP_SIGNATURES: Array<{ dep: string; framework: string }> = [
-  { dep: "next", framework: "Next.js" },
-  { dep: "vite", framework: "Vite" },
-  { dep: "@angular/core", framework: "Angular" },
-  { dep: "svelte", framework: "SvelteKit" },
-  { dep: "nuxt", framework: "Nuxt" },
-  { dep: "astro", framework: "Astro" },
-  { dep: "gatsby", framework: "Gatsby" },
-  { dep: "@remix-run/react", framework: "Remix" },
-  { dep: "react-scripts", framework: "Create React App" },
-];
-
-const MANIFEST_NAMES = ["manifest.json", "manifest.webmanifest", "site.webmanifest"];
-const SW_NAMES = ["service-worker.js", "sw.js", "serviceworker.js", "service-worker.ts"];
 const ICON_HINT_RE = /icon|favicon|logo|apple-touch/i;
+const HEAD_TAG_RE = /<head[\s>]/i;
+
+// Extensions we're willing to treat as text for detection purposes (rule 22:
+// never TextDecoder a binary file just because it happens to decode without
+// throwing — images, fonts, and archives can "succeed" and produce garbage).
+const TEXT_EXTENSIONS = new Set([
+  "js", "jsx", "ts", "tsx", "mjs", "cjs", "json", "webmanifest",
+  "html", "htm", "css", "vue", "svelte", "astro", "md", "mdx", "yml", "yaml", "txt",
+]);
 
 function decodeUtf8(bytes: Uint8Array): string {
   return new TextDecoder("utf-8").decode(bytes);
+}
+
+/** Safe text decode for detection: only for known text extensions, never throws. */
+function decodeIfText(f: ClientFile): string | null {
+  if (!TEXT_EXTENSIONS.has(f.ext)) return null;
+  try {
+    return decodeUtf8(f.bytes);
+  } catch {
+    return null;
+  }
+}
+
+function toProjectTextFiles(files: ClientFile[]): ProjectTextFile[] {
+  return files.map((f) => ({ path: f.path, text: decodeIfText(f) }));
 }
 
 /** Finds the best HTML entry point: root index.html first, then the shallowest index.html, then any HTML file. */
@@ -55,12 +60,127 @@ function findEntryHtml(files: ClientFile[]): string | null {
   return htmlFiles.sort((a, b) => a.path.split("/").length - b.path.split("/").length)[0].path;
 }
 
-function findByName(files: ClientFile[], names: string[]): string | null {
-  for (const f of files) {
-    const base = f.path.split("/").pop() || "";
-    if (names.includes(base.toLowerCase())) return f.path;
+/** Exact-path lookup, trying each candidate in order. Returns the file (not just the path) so callers can inspect its content. */
+function findExact(files: ClientFile[], candidates: string[]): ClientFile | null {
+  for (const c of candidates) {
+    const f = files.find((x) => x.path === c);
+    if (f) return f;
   }
   return null;
+}
+
+function fileHasLiteralHead(f: ClientFile): boolean {
+  return HEAD_TAG_RE.test(decodeUtf8(f.bytes));
+}
+
+interface StrategyResult {
+  strategy: PwaStrategy;
+  entryHtmlPath: string | null;
+  entryHtmlNeedsCreate: boolean;
+  configFilePath: string | null;
+  strategyNote: string | null;
+}
+
+const UNSUPPORTED: Omit<StrategyResult, "strategyNote"> = {
+  strategy: "unsupported",
+  entryHtmlPath: null,
+  entryHtmlNeedsCreate: false,
+  configFilePath: null,
+};
+
+/**
+ * Picks how Harbor PWA will wire itself into the project, based on the
+ * detected framework's actual conventions rather than a blind search for
+ * *.html — see the PwaStrategy doc comment in ./types for the full picture.
+ */
+function detectStrategy(files: ClientFile[], framework: string | null): StrategyResult {
+  if (framework === "Next.js") {
+    const appLayout = findExact(files, [
+      "app/layout.tsx",
+      "app/layout.jsx",
+      "app/layout.js",
+      "src/app/layout.tsx",
+      "src/app/layout.jsx",
+      "src/app/layout.js",
+    ]);
+    if (appLayout) {
+      // Some App Router templates still render <head> literally — if so,
+      // treat it exactly like any other html-shell instead of the special
+      // file-convention path.
+      if (fileHasLiteralHead(appLayout)) {
+        return { strategy: "html-shell", entryHtmlPath: appLayout.path, entryHtmlNeedsCreate: false, configFilePath: null, strategyNote: null };
+      }
+      return { strategy: "next-app-router", entryHtmlPath: null, entryHtmlNeedsCreate: false, configFilePath: appLayout.path, strategyNote: null };
+    }
+
+    const doc = findExact(files, [
+      "pages/_document.tsx",
+      "pages/_document.jsx",
+      "pages/_document.js",
+      "src/pages/_document.tsx",
+      "src/pages/_document.jsx",
+      "src/pages/_document.js",
+    ]);
+    if (doc) {
+      return { strategy: "html-shell", entryHtmlPath: doc.path, entryHtmlNeedsCreate: false, configFilePath: null, strategyNote: null };
+    }
+
+    // Pages Router without a custom _document.tsx — Harbor PWA creates a
+    // minimal one, then injects into it like any other html-shell.
+    const usesSrcPages = files.some((f) => f.path.startsWith("src/pages/"));
+    const hasPagesDir = usesSrcPages || files.some((f) => f.path.startsWith("pages/"));
+    if (hasPagesDir) {
+      return {
+        strategy: "html-shell",
+        entryHtmlPath: usesSrcPages ? "src/pages/_document.tsx" : "pages/_document.tsx",
+        entryHtmlNeedsCreate: true,
+        configFilePath: null,
+        strategyNote: null,
+      };
+    }
+
+    return { ...UNSUPPORTED, strategyNote: "next_no_app_or_pages" };
+  }
+
+  if (framework === "Nuxt") {
+    const cfg = findExact(files, ["nuxt.config.ts", "nuxt.config.js"]);
+    if (cfg) return { strategy: "nuxt3", entryHtmlPath: null, entryHtmlNeedsCreate: false, configFilePath: cfg.path, strategyNote: null };
+    return { ...UNSUPPORTED, strategyNote: "nuxt_no_config" };
+  }
+
+  if (framework === "Astro") {
+    const layouts = files.filter((f) => f.ext === "astro" && fileHasLiteralHead(f));
+    if (layouts.length > 0) {
+      const named = layouts.find((f) => /layout/i.test(f.path));
+      const chosen = named || layouts.sort((a, b) => a.path.split("/").length - b.path.split("/").length)[0];
+      return { strategy: "html-shell", entryHtmlPath: chosen.path, entryHtmlNeedsCreate: false, configFilePath: null, strategyNote: null };
+    }
+    return { ...UNSUPPORTED, strategyNote: "astro_no_head_layout" };
+  }
+
+  if (framework === "Gatsby") {
+    const htmlJs = findExact(files, ["src/html.js", "src/html.tsx", "src/html.jsx"]);
+    if (htmlJs && fileHasLiteralHead(htmlJs)) {
+      return { strategy: "html-shell", entryHtmlPath: htmlJs.path, entryHtmlNeedsCreate: false, configFilePath: null, strategyNote: null };
+    }
+    return { ...UNSUPPORTED, strategyNote: "gatsby_no_html_js" };
+  }
+
+  if (framework === "Remix") {
+    const root = findExact(files, ["app/root.tsx", "app/root.jsx", "app/root.js"]);
+    if (root && fileHasLiteralHead(root)) {
+      return { strategy: "html-shell", entryHtmlPath: root.path, entryHtmlNeedsCreate: false, configFilePath: null, strategyNote: null };
+    }
+    return { ...UNSUPPORTED, strategyNote: "remix_no_head_in_root" };
+  }
+
+  // Static HTML, Vite, CRA, Angular, SvelteKit, and anything unrecognized —
+  // these all ship a genuine .html file with a literal <head> in source.
+  const html = findEntryHtml(files);
+  if (html) {
+    return { strategy: "html-shell", entryHtmlPath: html, entryHtmlNeedsCreate: false, configFilePath: null, strategyNote: null };
+  }
+  return { ...UNSUPPORTED, strategyNote: "no_shell_found" };
 }
 
 export function analyzeProject(files: ClientFile[]): ProjectAnalysis {
@@ -68,28 +188,8 @@ export function analyzeProject(files: ClientFile[]): ProjectAnalysis {
   const pkgFile = files.find((f) => f.path === "package.json");
   const hasPackageJson = !!pkgFile;
 
-  let framework: string | null = null;
-  for (const sig of CONFIG_SIGNATURES) {
-    if (files.some((f) => f.path === sig.file)) {
-      framework = sig.framework;
-      break;
-    }
-  }
-
-  if (!framework && pkgFile) {
-    try {
-      const pkg = JSON.parse(decodeUtf8(pkgFile.bytes));
-      const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-      for (const sig of DEP_SIGNATURES) {
-        if (deps[sig.dep]) {
-          framework = sig.framework;
-          break;
-        }
-      }
-    } catch {
-      // malformed package.json — fall through, still try to find an entry HTML
-    }
-  }
+  const frameworkDetection = detectFramework(files);
+  let framework: string | null = frameworkDetection.framework;
 
   if (!framework) {
     framework = files.some((f) => f.ext === "html") ? "Static HTML" : hasPackageJson ? "Node.js" : null;
@@ -97,9 +197,18 @@ export function analyzeProject(files: ClientFile[]): ProjectAnalysis {
 
   const needsBuild = !!framework && framework !== "Static HTML" && hasPackageJson;
 
-  const entryHtmlPath = findEntryHtml(files);
-  const existingManifestPath = findByName(files, MANIFEST_NAMES);
-  const existingServiceWorkerPath = findByName(files, SW_NAMES);
+  const strategyResult = detectStrategy(files, framework);
+  const { strategy, entryHtmlPath, entryHtmlNeedsCreate, configFilePath, strategyNote } = strategyResult;
+
+  const textFiles = toProjectTextFiles(files);
+  const existingServiceWorker = detectServiceWorker(textFiles);
+  const existingManifest = detectManifest(textFiles);
+  // Only surface a plain path for confidently-detected artifacts — "low"
+  // confidence candidates (unregistered guesses, docs/examples fixtures)
+  // stay visible in the full detection object for diagnostics, but don't
+  // get treated as "this project already has one" by the rest of the app.
+  const existingManifestPath = existingManifest.confidence && existingManifest.confidence !== "low" ? existingManifest.path : null;
+  const existingServiceWorkerPath = existingServiceWorker.path;
   const hasIcons = files.some((f) => ["png", "svg", "ico", "webp", "jpg", "jpeg"].includes(f.ext) && ICON_HINT_RE.test(f.path));
 
   const hasPublicDir = files.some((f) => f.path.startsWith("public/"));
@@ -107,7 +216,7 @@ export function analyzeProject(files: ClientFile[]): ProjectAnalysis {
   const assetRoot = hasPublicDir ? "public" : hasStaticDir ? "static" : "";
 
   let suggestedStartUrl = "/";
-  if (entryHtmlPath) {
+  if (entryHtmlPath && !entryHtmlNeedsCreate) {
     const dir = entryHtmlPath.includes("/") ? entryHtmlPath.slice(0, entryHtmlPath.lastIndexOf("/") + 1) : "";
     suggestedStartUrl = dir ? `/${dir}` : "/";
   }
@@ -130,11 +239,19 @@ export function analyzeProject(files: ClientFile[]): ProjectAnalysis {
     fileCount: files.length,
     totalBytes,
     framework,
+    frameworkConfidence: frameworkDetection.framework ? frameworkDetection.confidence : 0,
+    frameworkEvidence: frameworkDetection.evidence,
     needsBuild,
+    strategy,
     entryHtmlPath,
+    entryHtmlNeedsCreate,
+    configFilePath,
+    strategyNote,
     hasPackageJson,
     existingManifestPath,
     existingServiceWorkerPath,
+    existingServiceWorker,
+    existingManifest,
     hasIcons,
     assetRoot,
     suggestedStartUrl,

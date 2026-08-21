@@ -1,6 +1,7 @@
 import AdmZip from "adm-zip";
 import path from "path";
 import fs from "fs";
+import { normalizeEntryPath } from "./pwa/detect/path-security";
 
 const IGNORE_DIRS = new Set(["node_modules", ".git", ".next", "dist", "build", ".DS_Store"]);
 
@@ -8,6 +9,18 @@ const IGNORE_DIRS = new Set(["node_modules", ".git", ".next", "dist", "build", "
 // (base64 encoding also inflates the upload ~33%) so push doesn't fail
 // midway through a multi-file commit.
 const OVERSIZED_FILE_BYTES = 90 * 1024 * 1024;
+
+// Hard resource limits (spec: never let a hostile archive exhaust memory/disk).
+const MAX_FILE_COUNT = 20000;
+const MAX_TOTAL_UNCOMPRESSED_BYTES = 400 * 1024 * 1024;
+const MAX_SINGLE_FILE_BYTES = 60 * 1024 * 1024;
+
+export class ZipLimitError extends Error {
+  constructor(public code: string, message: string) {
+    super(message);
+    this.name = "ZipLimitError";
+  }
+}
 
 export interface TreeNode {
   name: string;
@@ -47,39 +60,55 @@ export function extractZip(zipBuffer: Buffer, extractDir: string): ExtractedProj
   const zip = new AdmZip(zipBuffer);
   const entries = zip.getEntries();
 
+  if (entries.length > MAX_FILE_COUNT) {
+    throw new ZipLimitError("too_many_files", `Archive contains ${entries.length} files, over the ${MAX_FILE_COUNT} limit.`);
+  }
+
+  // Normalize every entry name up front through the same path-security rules
+  // used by the client-side extractor (zip-slip, absolute paths, drive
+  // letters, null bytes, all-dots segments) — adm-zip's own entryName is
+  // untrusted input from the archive, not something to build fs paths from
+  // directly.
+  const normalizedNames = new Map<string, string>();
+  const skippedUnsafePathsPre: string[] = [];
+  for (const entry of entries) {
+    const norm = normalizeEntryPath(entry.entryName);
+    if (norm === null) {
+      skippedUnsafePathsPre.push(entry.entryName);
+      continue;
+    }
+    normalizedNames.set(entry.entryName, norm);
+  }
+
   // ถ้า ZIP มี root folder เดียวหุ้มทุกอย่าง (พบบ่อยจากการกด "Download ZIP" ของ GitHub)
   // ให้ strip root นั้นออก เพื่อให้ package.json ไปอยู่ level บนสุด
-  const topLevelNames = new Set(
-    entries.map((e) => e.entryName.split("/")[0]).filter(Boolean)
-  );
-  const hasSingleRoot =
-    topLevelNames.size === 1 && entries.every((e) => e.entryName.startsWith([...topLevelNames][0]));
-  const rootPrefix = hasSingleRoot ? `${[...topLevelNames][0]}/` : "";
+  const survivingNames = [...normalizedNames.values()];
+  const topLevelNames = new Set(survivingNames.map((n) => n.split("/")[0]).filter(Boolean));
+  const onlyRoot = [...topLevelNames][0];
+  const hasSingleRoot = topLevelNames.size === 1 && survivingNames.every((n) => n.startsWith(`${onlyRoot}/`) || n === onlyRoot);
+  const rootPrefix = hasSingleRoot ? `${onlyRoot}/` : "";
 
   let fileCount = 0;
+  let totalUncompressed = 0;
   const oversizedFiles: string[] = [];
-  const skippedUnsafePaths: string[] = [];
+  const skippedUnsafePaths: string[] = [...skippedUnsafePathsPre];
   const seenLowerCase = new Map<string, string>();
   const caseCollisions: string[][] = [];
 
   for (const entry of entries) {
-    const relName = entry.entryName.startsWith(rootPrefix)
-      ? entry.entryName.slice(rootPrefix.length)
-      : entry.entryName;
+    const normalized = normalizedNames.get(entry.entryName);
+    if (normalized === undefined) continue; // already recorded as unsafe above
+
+    const relName = normalized.startsWith(rootPrefix) ? normalized.slice(rootPrefix.length) : normalized;
     if (!relName) continue;
 
     const segments = relName.split("/").filter(Boolean);
     if (segments.some((seg) => IGNORE_DIRS.has(seg))) continue;
 
-    // Reject path traversal / absolute-path entries outright rather than
-    // letting them write outside extractDir.
-    if (relName.startsWith("/") || segments.includes("..")) {
-      skippedUnsafePaths.push(relName);
-      continue;
-    }
-
     const destPath = path.join(extractDir, ...segments);
     if (!destPath.startsWith(path.normalize(extractDir))) {
+      // Defense in depth: even after normalizeEntryPath, confirm the final
+      // joined fs path still resolves under extractDir before writing.
       skippedUnsafePaths.push(relName);
       continue;
     }
@@ -87,8 +116,17 @@ export function extractZip(zipBuffer: Buffer, extractDir: string): ExtractedProj
     if (entry.isDirectory) {
       fs.mkdirSync(destPath, { recursive: true });
     } else {
-      fs.mkdirSync(path.dirname(destPath), { recursive: true });
       const data = entry.getData();
+
+      if (data.length > MAX_SINGLE_FILE_BYTES) {
+        throw new ZipLimitError("file_too_large", `${relName} is over the ${MAX_SINGLE_FILE_BYTES / 1024 / 1024}MB single-file limit.`);
+      }
+      totalUncompressed += data.length;
+      if (totalUncompressed > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+        throw new ZipLimitError("archive_too_large_uncompressed", `Archive decompressed to over ${MAX_TOTAL_UNCOMPRESSED_BYTES / 1024 / 1024}MB in total.`);
+      }
+
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
       fs.writeFileSync(destPath, data);
       fileCount++;
 
