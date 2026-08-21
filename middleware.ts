@@ -7,7 +7,7 @@ import { SESSION_COOKIE_NAME } from "@/lib/session";
  * actual decrypt + GitHub API calls happen in the API routes themselves.
  */
 
-const PUBLIC_PATHS = ["/login", "/api/auth", "/api/version"];
+const PUBLIC_PATHS = ["/login", "/api/auth", "/api/version", "/manifest.webmanifest", "/service-worker.js"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
