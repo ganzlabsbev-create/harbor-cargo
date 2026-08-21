@@ -310,11 +310,11 @@ export default function HarborPwaPage() {
             </Section>
 
             <Section title={t("pwa_section_appearance")}>
-              <div className="flex gap-3">
-                <Field label={t("pwa_theme_color_label")} className="flex-1">
+              <div className="flex flex-col gap-3">
+                <Field label={t("pwa_theme_color_label")}>
                   <ColorInput value={form.themeColor} onChange={(v) => updateForm({ themeColor: v })} />
                 </Field>
-                <Field label={t("pwa_bg_color_label")} className="flex-1">
+                <Field label={t("pwa_bg_color_label")}>
                   <ColorInput value={form.backgroundColor} onChange={(v) => updateForm({ backgroundColor: v })} />
                 </Field>
               </div>
