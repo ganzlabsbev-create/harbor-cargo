@@ -134,6 +134,8 @@ export interface VercelProject {
   dashboardUrl: string;
   /** Live URL of the most recent production deployment, once one exists. */
   deploymentUrl: string | null;
+  /** id of that same deployment, if any — lets the caller poll its status. */
+  deploymentId: string | null;
 }
 
 /**
@@ -184,6 +186,7 @@ export async function createProjectFromRepo(token: string, input: CreateProjectI
     // guess a slug and risk a broken deep link.
     dashboardUrl: "https://vercel.com/dashboard",
     deploymentUrl: data.latestDeployments?.[0]?.url ? `https://${data.latestDeployments[0].url}` : null,
+    deploymentId: data.latestDeployments?.[0]?.id ?? null,
   };
 }
 
@@ -195,14 +198,19 @@ export async function addProjectDomain(token: string, projectId: string, domain:
   });
 }
 
-/** Polls the project once for its latest deployment URL (used right after create, since the first deployment can take a few seconds to register). */
-export async function getLatestDeploymentUrl(token: string, projectId: string, teamId?: string | null): Promise<string | null> {
+/** Polls the project once for its latest deployment (used right after create, since the first deployment can take a few seconds to register). */
+export async function getLatestDeployment(
+  token: string,
+  projectId: string,
+  teamId?: string | null
+): Promise<{ url: string | null; id: string | null }> {
   try {
     const data = await vc(token, withTeam(`/v9/projects/${projectId}`, teamId));
     const url = data?.latestDeployments?.[0]?.url;
-    return url ? `https://${url}` : null;
+    const id = data?.latestDeployments?.[0]?.id;
+    return { url: url ? `https://${url}` : null, id: id ?? null };
   } catch {
-    return null;
+    return { url: null, id: null };
   }
 }
 

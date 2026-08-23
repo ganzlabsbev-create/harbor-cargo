@@ -6,7 +6,6 @@ import { ChevronLeft, Loader2, Rocket, Triangle } from "lucide-react";
 import Header from "@/components/Header";
 import AuthGate from "@/components/AuthGate";
 import { useLang } from "@/lib/i18n-context";
-import { useElapsedSeconds } from "@/lib/use-elapsed";
 
 interface ProjectOption {
   id: string;
@@ -21,7 +20,9 @@ export default function VercelManagePickerPage() {
   const [vercelConnected, setVercelConnected] = useState<boolean | null>(null);
   const [projects, setProjects] = useState<ProjectOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const loadElapsed = useElapsedSeconds(vercelConnected === true && !projects && !loadError);
+  // Single atomic fetch with no internal stages — a plain indeterminate
+  // spinner is the honest representation, not a fake percentage or a
+  // "still working... (Ns)" counter.
 
   useEffect(() => {
     fetch("/api/vercel/status")
@@ -68,7 +69,6 @@ export default function VercelManagePickerPage() {
         ) : vercelConnected === null || (vercelConnected === true && !projects && !loadError) ? (
           <p className="flex items-center gap-2 text-sm text-ink-dim">
             <Loader2 size={16} className="animate-spin" /> {t("loading_vercel_projects")}
-            {loadElapsed > 0 && <span className="text-ink-faint">({loadElapsed}{t("seconds_short")})</span>}
           </p>
         ) : loadError ? (
           <p className="text-sm text-accent-red">{loadError}</p>

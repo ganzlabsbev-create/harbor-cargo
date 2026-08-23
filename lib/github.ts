@@ -171,7 +171,8 @@ export async function pushFilesToRepo(
   repo: string,
   extractDir: string,
   relativeFiles: string[],
-  commitMessage = "Initial upload via HARBOR CARGO"
+  commitMessage = "Initial upload via HARBOR CARGO",
+  onProgress?: (current: number, total: number) => void
 ): Promise<string> {
   let baseSha: string | null = null;
   let defaultBranch = "main";
@@ -186,6 +187,7 @@ export async function pushFilesToRepo(
   }
 
   const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
+  let completed = 0;
   for (const rel of relativeFiles) {
     const abs = path.join(extractDir, rel);
     const content = fs.readFileSync(abs);
@@ -194,6 +196,8 @@ export async function pushFilesToRepo(
       body: JSON.stringify({ content: content.toString("base64"), encoding: "base64" }),
     });
     treeItems.push({ path: rel, mode: "100644", type: "blob", sha: blob.sha });
+    completed++;
+    onProgress?.(completed, relativeFiles.length);
     // Small pacing gap between blob POSTs. GitHub's secondary/abuse rate
     // limiter throttles bursts of content-creating requests even when well
     // under the primary hourly quota — this keeps large uploads (100+
@@ -331,7 +335,8 @@ export async function commitFileChanges(
   repo: string,
   branch: string,
   changes: FileChange[],
-  commitMessage: string
+  commitMessage: string,
+  onProgress?: (current: number, total: number) => void
 ): Promise<string> {
   if (changes.length === 0) {
     throw new Error("No changes selected");
@@ -360,15 +365,20 @@ export async function commitFileChanges(
   }
 
   const treeItems: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];
+  let completed = 0;
   for (const change of changes) {
     if (change.action === "delete") {
       treeItems.push({ path: change.path, mode: "100644", type: "blob", sha: null });
+      completed++;
+      onProgress?.(completed, changes.length);
       continue;
     }
     if (change.sha) {
       // Rename-only: the content already exists as this blob, just point
       // the new path at it — no upload needed.
       treeItems.push({ path: change.path, mode: "100644", type: "blob", sha: change.sha });
+      completed++;
+      onProgress?.(completed, changes.length);
       continue;
     }
     if (!change.content) {
@@ -379,6 +389,8 @@ export async function commitFileChanges(
       body: JSON.stringify({ content: change.content.toString("base64"), encoding: "base64" }),
     });
     treeItems.push({ path: change.path, mode: "100644", type: "blob", sha: blob.sha });
+    completed++;
+    onProgress?.(completed, changes.length);
     // Same pacing as pushFilesToRepo — this is the path a 100+ file diff
     // (like "replace 179 files") goes through, and it's exactly what was
     // tripping GitHub's secondary rate limiter.

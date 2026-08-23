@@ -787,6 +787,43 @@ export default function CaptainHarbor() {
     return status === 401 || data?.error === "not_authenticated";
   }
 
+  /**
+   * /api/push and /api/commit-diff stream NDJSON once their blob-upload
+   * loop starts (see app/tools/github/new/page.tsx and
+   * app/tools/github/update/page.tsx for the fill-bar UI that consumes the
+   * same stream) — but any validation failure before that loop begins
+   * still comes back as a single plain JSON response. This normalizes
+   * both cases to the same shape the old single-JSON response had
+   * ({ok, error, detail, repoUrl/commitUrl, ...}) by reading through to
+   * the final "done" event, and drops "progress" events along the way —
+   * Captain Harbor's step checklist is intentionally not wired to
+   * per-file progress (see the NOTE above handleConfirm's stepLabels).
+   */
+  async function readPushOrCommitResponse(res: Response): Promise<any> {
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/x-ndjson") || !res.body) {
+      return res.json();
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffered = "";
+    let finalData: any = null;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffered += decoder.decode(value, { stream: true });
+      const lines = buffered.split("\n");
+      buffered = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === "done") finalData = event;
+        // "progress" events are intentionally ignored here.
+      }
+    }
+    return finalData || { ok: false, error: "push_failed" };
+  }
+
   /** Shows a specific "you were logged out" message + a login button,
    *  instead of the generic error copy. Reuses `pendingId` if given so it
    *  replaces an in-flight "checking..." bubble rather than adding a new one. */
@@ -1424,6 +1461,18 @@ export default function CaptainHarbor() {
 
     setChat((c) => ({ ...c, step: "executing" }));
 
+    // NOTE on real-progress-UI pass: /api/push and /api/commit-diff now
+    // stream per-blob NDJSON progress (see app/tools/github/new/page.tsx
+    // and app/tools/github/update/page.tsx), but this chat's checklist
+    // ("Uploading" -> "Creating repo" -> "Pushing files", each item just
+    // done:false/true) doesn't have a slot for a mid-step fraction like
+    // "42/120 files" without changing the ChatMessage.steps shape itself.
+    // Left as-is deliberately: the discrete step checklist is already an
+    // honest representation (each step only flips to done once the real
+    // work behind it actually finishes), just coarser-grained than the
+    // dedicated pages' fill bars. Wiring the same {current,total} stream in
+    // here is a reasonable follow-up if per-file progress is wanted inside
+    // the chat too.
     const isUpdate = chat.action === "update";
     // "Remove files" is deliberately not a step here: Captain Harbor has no
     // per-file review UI for repoOnly files (unlike the update page's
@@ -1495,7 +1544,7 @@ export default function CaptainHarbor() {
           }),
         });
       }
-      const data = await res.json();
+      const data = await readPushOrCommitResponse(res);
 
       if (!data.ok) {
         if (isSessionExpired(res.status, data)) {

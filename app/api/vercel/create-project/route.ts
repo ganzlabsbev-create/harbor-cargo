@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { createProjectFromRepo, addProjectDomain, getLatestDeploymentUrl, VercelApiError, EnvVarInput } from "@/lib/vercel";
+import { createProjectFromRepo, addProjectDomain, getLatestDeployment, VercelApiError, EnvVarInput } from "@/lib/vercel";
 
 interface Body {
   owner: string;
@@ -65,11 +65,14 @@ export async function POST(request: Request) {
 
     // The first deployment can take a moment to register after project
     // creation — give it one short retry so the UI usually gets a real
-    // live URL back instead of null.
+    // live URL (and deployment id, for status polling) back instead of null.
     let deploymentUrl = project.deploymentUrl;
-    if (!deploymentUrl) {
+    let deploymentId = project.deploymentId;
+    if (!deploymentUrl || !deploymentId) {
       await new Promise((r) => setTimeout(r, 2500));
-      deploymentUrl = await getLatestDeploymentUrl(session.vercelToken, project.id, session.vercelTeamId);
+      const latest = await getLatestDeployment(session.vercelToken, project.id, session.vercelTeamId);
+      deploymentUrl = deploymentUrl || latest.url;
+      deploymentId = deploymentId || latest.id;
     }
 
     return NextResponse.json({
@@ -78,6 +81,7 @@ export async function POST(request: Request) {
       projectName: project.name,
       dashboardUrl: project.dashboardUrl,
       deploymentUrl,
+      deploymentId,
       domainWarning,
     });
   } catch (err: any) {

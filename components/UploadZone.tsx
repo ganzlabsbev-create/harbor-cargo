@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
-import { UploadCloud, Loader2, FileUp, Clock } from "lucide-react";
+import { UploadCloud, FileUp, Clock } from "lucide-react";
 import { useLang } from "@/lib/i18n-context";
-import { useCountdown, useElapsedSeconds } from "@/lib/use-elapsed";
+import { useCountdown } from "@/lib/use-elapsed";
 
 export interface UploadedBlob {
   url: string;
@@ -51,12 +51,17 @@ export default function UploadZone({
   // elapsed-time counter next to it) can reflect real progress instead of
   // one static "Analyzing..." string for the whole request.
   const [stage, setStage] = useState<"checking" | "uploading" | "processing" | null>(null);
+  // Real, measured progress (0-100) behind the fill visual — never a timer.
+  // "checking" jumps to a small starting value on entry (a true event, not
+  // a guess), "uploading" tracks real bytes-sent via onUploadProgress, and
+  // "processing" holds at its stage-3 starting point since there's no
+  // client-visible signal for that stage today.
+  const [uploadPercent, setUploadPercent] = useState(0);
   // Seconds left on an active rate-limit cooldown, ticking down live until
   // it hits 0 ("unlocked") — set from the server's retryAfterSeconds and
   // then counted down purely on the client. null = not rate-limited.
   const [rateLimitStart, setRateLimitStart] = useState<number | null>(null);
 
-  const elapsed = useElapsedSeconds(stage !== null);
   const rateLimitRemaining = useCountdown(rateLimitStart);
   const isRateLimited = rateLimitStart !== null && (rateLimitRemaining ?? 0) > 0;
 
@@ -78,6 +83,10 @@ export default function UploadZone({
     setError(null);
     try {
       setStage("checking");
+      // No granular signal is possible for this stage (one fast fetch), so
+      // this jump reflects a real, true event — "pre-check started" — not a
+      // timer or a guessed duration.
+      setUploadPercent(8);
       const rateLimitRes = await fetch("/api/upload/rate-limit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -98,10 +107,20 @@ export default function UploadZone({
       const blobResult = await upload(`uploads/${crypto.randomUUID()}.zip`, file, {
         access: "public",
         handleUploadUrl: "/api/upload/blob-token",
+        // Fired continuously as bytes actually go out over the wire — this
+        // stage owns roughly 10%→90% of the total fill, mapped directly and
+        // continuously from real loaded/total bytes (no easing that lags
+        // behind what's really happening).
+        onUploadProgress: (p) => setUploadPercent(10 + p.percentage * 0.8),
       });
       const blobRef: UploadedBlob = { url: blobResult.url, pathname: blobResult.pathname };
 
+      // No client-visible progress signal exists for server-side extraction
+      // and analysis today, so this stage honestly holds near its starting
+      // point (see the pulse on the fill layer below) instead of faking a
+      // percentage that keeps climbing.
       setStage("processing");
+      setUploadPercent(90);
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -111,12 +130,17 @@ export default function UploadZone({
       if (!data.ok) {
         throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "upload_failed");
       }
+      // Snap to 100% briefly before the view changes, so the fill actually
+      // reads as "done" instead of jumping straight from 90% to gone.
+      setUploadPercent(100);
+      await new Promise((r) => setTimeout(r, 200));
       onAnalyzed(blobRef, data, file.name);
     } catch (err: any) {
       setError(String(err?.message || err));
     } finally {
       setUploading(false);
       setStage(null);
+      setUploadPercent(0);
     }
   }
 
@@ -212,21 +236,29 @@ export default function UploadZone({
             : "border-base-border bg-base-surface hover:border-ink-faint/50"
         }`}
       >
-        {busy ? (
-          <Loader2 size={28} strokeWidth={2} className="animate-spin text-harbor-orange" />
-        ) : (
-          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-base-border bg-base-surface2 text-ink-dim">
-            <UploadCloud size={22} strokeWidth={1.75} />
-          </div>
+        {isUploading && (
+          // Real, measured progress — a colored layer rising from the
+          // bottom edge to the top, height = actual percentage. During
+          // "processing" (no client-visible signal exists) this holds near
+          // its starting point with a subtle pulse instead of faking motion.
+          <div
+            aria-hidden
+            className={`pointer-events-none absolute inset-x-0 bottom-0 bg-harbor-orange/20 ${
+              stage === "processing" ? "animate-pulse transition-none" : "transition-[height] duration-150 ease-out"
+            }`}
+            style={{ height: `${uploadPercent}%` }}
+          />
         )}
-        <p className="font-display text-base font-medium text-ink">
-          {busy ? busyLabel : t("upload_title")}
-          {busy && elapsed > 0 && (
-            <span className="ml-1 text-ink-faint">
-              ({elapsed}{t("seconds_short")})
-            </span>
-          )}
-        </p>
+        <div className="relative z-10 flex flex-col items-center gap-3">
+          <div
+            className={`flex h-12 w-12 items-center justify-center rounded-full border border-base-border bg-base-surface2 text-ink-dim ${
+              isZipping ? "animate-pulse" : ""
+            }`}
+          >
+            <UploadCloud size={22} strokeWidth={1.75} className={busy ? "text-harbor-orange" : undefined} />
+          </div>
+          <p className="font-display text-base font-medium text-ink">{busy ? busyLabel : t("upload_title")}</p>
+        </div>
         {!busy && (
           <>
             <span className="text-xs text-ink-faint">{t("upload_or")}</span>

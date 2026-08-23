@@ -13,7 +13,6 @@ import ZipWarnings from "@/components/ZipWarnings";
 import ConfirmMoveDialog from "@/components/ConfirmMoveDialog";
 import { useLang } from "@/lib/i18n-context";
 import { cleanupBlob, useBlobCleanup } from "@/lib/use-blob-cleanup";
-import { useElapsedSeconds } from "@/lib/use-elapsed";
 import { basename, computeMoveTarget, findMoveCollision, dedupeMoveTarget, listFolderFullPaths } from "@/lib/tree-utils";
 import { addRecent, removeRecent } from "@/lib/recents";
 
@@ -98,9 +97,14 @@ function UpdateRepoPage() {
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ commitUrl: string } | null>(null);
-  const commitElapsed = useElapsedSeconds(committing);
+  // Real, measured progress for the commit step — {current, total} blobs
+  // completed, streamed from /api/commit-diff as each one actually lands.
+  // Never a timer/guess; see handleCommit below.
+  const [commitProgress, setCommitProgress] = useState<{ current: number; total: number } | null>(null);
 
-  const reposLoadElapsed = useElapsedSeconds(!repos && !loadError);
+  // Repo list load is a single atomic fetch with no internal stages — a
+  // plain indeterminate spinner is the honest representation here, not a
+  // fake percentage or a "still working... (Ns)" counter.
 
   useEffect(() => {
     fetch("/api/repos")
@@ -367,6 +371,7 @@ function UpdateRepoPage() {
   async function handleCommit() {
     if (!blob || !selected || !diff || totalChanges === 0) return;
     setCommitting(true);
+    setCommitProgress(null);
     setError(null);
     try {
       const [owner, repo] = selected.full_name.split("/");
@@ -440,13 +445,47 @@ function UpdateRepoPage() {
           changes: dedupedChanges,
         }),
       });
-      const data = await res.json();
-      if (!data.ok) throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "commit_failed");
-      setResult({ commitUrl: data.commitUrl });
+
+      // Non-streamed failure (validation before the blob loop even starts,
+      // e.g. missing_fields/no_file/no_changes) — server sent plain JSON.
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/x-ndjson")) {
+        const data = await res.json();
+        throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "commit_failed");
+      }
+
+      // Streamed: one JSON line per event as each blob actually completes.
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffered = "";
+      let finalData: any = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffered += decoder.decode(value, { stream: true });
+        const lines = buffered.split("\n");
+        buffered = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line);
+          if (event.type === "progress") {
+            setCommitProgress({ current: event.current, total: event.total });
+          } else if (event.type === "done") {
+            finalData = event;
+          }
+        }
+      }
+      if (!finalData || !finalData.ok) {
+        throw new Error(
+          [finalData?.error, finalData?.detail].filter(Boolean).join(": ") || "commit_failed"
+        );
+      }
+      setResult({ commitUrl: finalData.commitUrl });
     } catch (err: any) {
       setError(String(err?.message || err));
     } finally {
       setCommitting(false);
+      setCommitProgress(null);
     }
   }
 
@@ -480,7 +519,6 @@ function UpdateRepoPage() {
             ) : !repos ? (
               <p className="flex items-center gap-2 text-sm text-ink-dim">
                 <Loader2 size={16} className="animate-spin" /> {t("loading_repos")}
-                {reposLoadElapsed > 0 && <span className="text-ink-faint">({reposLoadElapsed}{t("seconds_short")})</span>}
               </p>
             ) : repos.length === 0 ? (
               <p className="text-sm text-ink-dim">{t("no_repos")}</p>
@@ -610,16 +648,32 @@ function UpdateRepoPage() {
                   <button
                     onClick={handleCommit}
                     disabled={committing || totalChanges === 0}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-harbor-orange px-5 py-3.5 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
+                    className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-harbor-orange px-5 py-3.5 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
                   >
-                    {committing ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" /> {t("committing")}
-                        {commitElapsed > 0 && <span className="opacity-80">({commitElapsed}{t("seconds_short")})</span>}
-                      </>
-                    ) : (
-                      t("confirm_commit_button")
+                    {committing && commitProgress && (
+                      // Real, measured progress — a colored layer filling
+                      // left-to-right, width = actual completed/total blobs,
+                      // streamed from /api/commit-diff as each one lands.
+                      <div
+                        aria-hidden
+                        className="pointer-events-none absolute inset-y-0 left-0 bg-white/20 transition-[width] duration-150 ease-out"
+                        style={{ width: `${(commitProgress.current / Math.max(commitProgress.total, 1)) * 100}%` }}
+                      />
                     )}
+                    <span className="relative z-10 flex items-center gap-2">
+                      {committing ? (
+                        <>
+                          <Loader2 size={18} className="animate-spin" /> {t("committing")}
+                          {commitProgress && (
+                            <span className="opacity-80">
+                              ({commitProgress.current}/{commitProgress.total})
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        t("confirm_commit_button")
+                      )}
+                    </span>
                   </button>
                   {totalChanges === 0 && (
                     <p className="mt-2 text-center text-[11px] text-ink-faint">{t("no_changes_selected")}</p>

@@ -29,6 +29,10 @@ interface IncomingChange {
   sha?: string;
 }
 
+function ndjson(obj: unknown): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(obj) + "\n");
+}
+
 /**
  * Applies the user's selected add/replace/delete set as a single commit.
  * Reads the same blob /api/diff already looked at (see
@@ -38,6 +42,12 @@ interface IncomingChange {
  * The blob is deleted once the commit succeeds — but left in place on any
  * failure, so a retry (e.g. after a transient GitHub error) can run against
  * the same blob instead of forcing the user to re-upload the ZIP.
+ *
+ * Streams NDJSON once the real work (the blob-upload loop in
+ * commitFileChanges) begins, so the client can render true per-blob
+ * progress — see app/tools/github/update/page.tsx. Validation failures
+ * before that loop starts still return a normal, non-streamed JSON
+ * response immediately.
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -76,11 +86,15 @@ export async function POST(req: NextRequest) {
   }
 
   const extractDir = path.join(os.tmpdir(), `harbor-commitdiff-${nanoid()}`);
+
+  // --- Pre-loop setup: still a normal, non-streamed response on failure,
+  // since the blob-upload loop hasn't started yet. ---
+  let fileChanges: FileChange[];
   try {
     const buffer = await fetchBlobBuffer(blobUrl);
     const extracted = extractZip(buffer, extractDir);
 
-    const fileChanges: FileChange[] = changes.map((c) => {
+    fileChanges = changes.map((c) => {
       if (c.action === "delete") return { path: c.path, action: "delete" };
       if (c.sha) return { path: c.path, action: c.action, sha: c.sha };
       const zipPath = c.zipPath || c.path;
@@ -90,27 +104,52 @@ export async function POST(req: NextRequest) {
       }
       return { path: c.path, action: c.action, content: fs.readFileSync(abs) };
     });
-
-    const commitUrl = await commitFileChanges(session.token, owner, repo, branch, fileChanges, commitMessage);
-
-    await recordProjectPush({
-      id: nanoid(),
-      user_id: session.userId,
-      project_name: repo,
-      repo_url: commitUrl,
-      framework: null,
-    }).catch(() => {});
-
-    // Only delete the blob once the commit has actually succeeded — on
-    // failure it needs to stay put so a retry doesn't 404 fetching it again.
-    await del(blobPathname).catch(() => {});
-
-    return NextResponse.json({ ok: true, commitUrl });
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: "commit_failed", detail: String(err?.message || err) }, { status: 500 });
-  } finally {
-    // Local temp dir only — unrelated to the blob-retry concern above, so
-    // this can always be cleaned up regardless of outcome.
+    // Local temp dir only — the blob stays put on any pre-loop failure so a
+    // retry doesn't 404 fetching it again.
     fs.promises.rm(extractDir, { recursive: true, force: true }).catch(() => {});
+    return NextResponse.json({ ok: false, error: "commit_failed", detail: String(err?.message || err) }, { status: 500 });
   }
+
+  // --- Streaming phase: the blob-upload loop (the real, measurable unit of
+  // progress) starts here. One JSON line per event. ---
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        const commitUrl = await commitFileChanges(
+          session.token,
+          owner,
+          repo,
+          branch,
+          fileChanges,
+          commitMessage,
+          (current, total) => controller.enqueue(ndjson({ type: "progress", current, total }))
+        );
+
+        await recordProjectPush({
+          id: nanoid(),
+          user_id: session.userId,
+          project_name: repo,
+          repo_url: commitUrl,
+          framework: null,
+        }).catch(() => {});
+
+        // Only delete the blob once the commit has actually succeeded — on
+        // failure it needs to stay put so a retry doesn't 404 fetching it
+        // again.
+        await del(blobPathname).catch(() => {});
+
+        controller.enqueue(ndjson({ type: "done", ok: true, commitUrl }));
+      } catch (err: any) {
+        controller.enqueue(ndjson({ type: "done", ok: false, error: "commit_failed", detail: String(err?.message || err) }));
+      } finally {
+        // Local temp dir only — unrelated to the blob-retry concern above,
+        // so this can always be cleaned up regardless of outcome.
+        fs.promises.rm(extractDir, { recursive: true, force: true }).catch(() => {});
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, { headers: { "Content-Type": "application/x-ndjson" } });
 }

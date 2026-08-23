@@ -7,8 +7,18 @@ import Header from "@/components/Header";
 import AuthGate from "@/components/AuthGate";
 import RepoIcon from "@/components/RepoIcon";
 import { useLang } from "@/lib/i18n-context";
-import { useElapsedSeconds } from "@/lib/use-elapsed";
 import { VERCEL_FRAMEWORKS } from "@/lib/vercel-frameworks";
+
+// Fixed fill checkpoints for the Create button — real, discrete state from
+// the create/poll responses, never interpolated between them (a jump per
+// observed state change is more honest than smooth motion implying
+// knowledge we don't have).
+const CREATE_CHECKPOINTS = {
+  projectCreated: 25,
+  queued: 40,
+  building: 70,
+  ready: 100,
+} as const;
 
 interface RepoOption {
   name: string;
@@ -35,7 +45,9 @@ export default function VercelNewPage() {
   const [repos, setRepos] = useState<RepoOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<RepoOption | null>(null);
-  const reposLoadElapsed = useElapsedSeconds(!repos && !loadError);
+  // Repo list load is a single atomic fetch with no internal stages — a
+  // plain indeterminate spinner is the honest representation here, not a
+  // fake percentage or a "still working... (Ns)" counter.
 
   useEffect(() => {
     fetch("/api/repos")
@@ -115,7 +127,10 @@ export default function VercelNewPage() {
   const [result, setResult] = useState<{ deploymentUrl: string | null; dashboardUrl: string; domainWarning: string | null } | null>(
     null
   );
-  const createElapsed = useElapsedSeconds(creating);
+  // Real, discrete progress for the Create button — jumps to a fixed
+  // checkpoint the moment that state is actually observed from the
+  // create/poll responses (see CREATE_CHECKPOINTS above).
+  const [createCheckpoint, setCreateCheckpoint] = useState(0);
 
   function selectRepo(r: RepoOption) {
     setSelected(r);
@@ -145,6 +160,7 @@ export default function VercelNewPage() {
   async function handleCreate() {
     if (!selected || !projectName) return;
     setCreating(true);
+    setCreateCheckpoint(0);
     setError(null);
     setInstallUrl(null);
     try {
@@ -172,11 +188,49 @@ export default function VercelNewPage() {
         if (data.error === "github_app_not_installed" && data.installUrl) setInstallUrl(data.installUrl);
         throw new Error(data.error === "vercel_not_connected" ? t("error_vercel_not_connected") : data.detail || data.error);
       }
+      // Real, discrete state #1: the project itself now exists.
+      setCreateCheckpoint(CREATE_CHECKPOINTS.projectCreated);
+
+      // Poll the initial deployment's status (same discrete state the
+      // manage page and Captain Harbor already poll) so the fill only ever
+      // jumps forward on a real, observed QUEUED/BUILDING/READY change —
+      // never on a timer.
+      const projectId: string | undefined = data.projectId;
+      const deploymentId: string | undefined = data.deploymentId;
+      if (projectId && deploymentId) {
+        const maxAttempts = 10; // ~2s apart -> up to ~20s before giving up
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            const statusRes = await fetch(`/api/vercel/projects/${projectId}/deployments/${deploymentId}/status`);
+            const statusData = await statusRes.json();
+            const state = String(statusData?.status?.state || "").toUpperCase();
+            if (state === "QUEUED" || state === "INITIALIZING") {
+              setCreateCheckpoint((c) => Math.max(c, CREATE_CHECKPOINTS.queued));
+            } else if (state === "BUILDING") {
+              setCreateCheckpoint((c) => Math.max(c, CREATE_CHECKPOINTS.building));
+            } else if (state === "READY") {
+              setCreateCheckpoint(CREATE_CHECKPOINTS.ready);
+              break;
+            } else if (state === "ERROR" || state === "CANCELED") {
+              // Deployment failed after the project was created — the
+              // project + form flow still succeeded, so don't throw here,
+              // just stop polling and let the fill hold at its last real
+              // checkpoint.
+              break;
+            }
+          } catch {
+            break; // network hiccup mid-poll — stop rather than fake progress
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+
       setResult({ deploymentUrl: data.deploymentUrl, dashboardUrl: data.dashboardUrl, domainWarning: data.domainWarning });
     } catch (err: any) {
       setError(String(err?.message || err));
     } finally {
       setCreating(false);
+      setCreateCheckpoint(0);
     }
   }
 
@@ -236,7 +290,6 @@ export default function VercelNewPage() {
             ) : !repos ? (
               <p className="flex items-center gap-2 text-sm text-ink-dim">
                 <Loader2 size={16} className="animate-spin" /> {t("loading_repos")}
-                {reposLoadElapsed > 0 && <span className="text-ink-faint">({reposLoadElapsed}{t("seconds_short")})</span>}
               </p>
             ) : repos.length === 0 ? (
               <p className="text-sm text-ink-dim">{t("no_repos")}</p>
@@ -412,16 +465,27 @@ export default function VercelNewPage() {
             <button
               onClick={handleCreate}
               disabled={creating || !projectName}
-              className="flex items-center justify-center gap-2 rounded-xl bg-harbor-orange px-5 py-3.5 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
+              className="relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-harbor-orange px-5 py-3.5 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
             >
-              {creating ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" /> {t("creating_project")}
-                  {createElapsed > 0 && <span className="opacity-80">({createElapsed}{t("seconds_short")})</span>}
-                </>
-              ) : (
-                t("create_deploy_button")
+              {creating && createCheckpoint > 0 && (
+                // Real, discrete state — jumps to a fixed checkpoint the
+                // moment it's actually observed (project created / QUEUED /
+                // BUILDING / READY), no interpolation between them.
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 left-0 bg-white/20 transition-[width] duration-300 ease-out"
+                  style={{ width: `${createCheckpoint}%` }}
+                />
               )}
+              <span className="relative z-10 flex items-center gap-2">
+                {creating ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" /> {t("creating_project")}
+                  </>
+                ) : (
+                  t("create_deploy_button")
+                )}
+              </span>
             </button>
           </div>
         )}

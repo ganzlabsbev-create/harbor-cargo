@@ -13,7 +13,6 @@ import ConfirmMoveDialog from "@/components/ConfirmMoveDialog";
 import { useLang } from "@/lib/i18n-context";
 import { useBlobCleanup } from "@/lib/use-blob-cleanup";
 import { flattenFiles, buildTreeFromPaths, listFolderPaths, basename, computeMoveTarget, findMoveCollision, dedupeMoveTarget } from "@/lib/tree-utils";
-import { useElapsedSeconds } from "@/lib/use-elapsed";
 
 interface AnalyzeResult {
   ok: true;
@@ -58,7 +57,10 @@ function NewRepoPage() {
     collidingPath: string;
     collidingKind: "file" | "folder";
   } | null>(null);
-  const pushElapsed = useElapsedSeconds(pushing);
+  // Real, measured progress for the push step — {current, total} blobs
+  // completed, streamed from /api/push as each one actually lands. Never a
+  // timer/guess; see handlePush below.
+  const [pushProgress, setPushProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Deletes the uploaded blob if the user leaves without ever pushing.
   useBlobCleanup(result ? null : blob);
@@ -141,6 +143,7 @@ function NewRepoPage() {
   async function handlePush() {
     if (!blob || !repoName) return;
     setPushing(true);
+    setPushProgress(null);
     setError(null);
     try {
       const moves = Object.entries(pathMap)
@@ -159,13 +162,45 @@ function NewRepoPage() {
           excludePaths: Array.from(excludedPaths),
         }),
       });
-      const data = await res.json();
-      if (!data.ok) throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "push_failed");
-      setResult({ repoUrl: data.repoUrl });
+
+      // Non-streamed failure (validation before the blob loop even starts,
+      // e.g. not_authenticated/invalid_zip/file_too_large) — plain JSON.
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/x-ndjson")) {
+        const data = await res.json();
+        throw new Error([data.error, data.detail].filter(Boolean).join(": ") || "push_failed");
+      }
+
+      // Streamed: one JSON line per event as each blob actually completes.
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffered = "";
+      let finalData: any = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffered += decoder.decode(value, { stream: true });
+        const lines = buffered.split("\n");
+        buffered = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line);
+          if (event.type === "progress") {
+            setPushProgress({ current: event.current, total: event.total });
+          } else if (event.type === "done") {
+            finalData = event;
+          }
+        }
+      }
+      if (!finalData || !finalData.ok) {
+        throw new Error([finalData?.error, finalData?.detail].filter(Boolean).join(": ") || "push_failed");
+      }
+      setResult({ repoUrl: finalData.repoUrl });
     } catch (err: any) {
       setError(String(err?.message || err));
     } finally {
       setPushing(false);
+      setPushProgress(null);
     }
   }
 
@@ -263,16 +298,32 @@ function NewRepoPage() {
                 <button
                   onClick={handlePush}
                   disabled={pushing || !repoName}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-harbor-orange px-5 py-3.5 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
+                  className="relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-harbor-orange px-5 py-3.5 font-display font-semibold text-white shadow-glow-orange disabled:opacity-50"
                 >
-                  {pushing ? (
-                    <>
-                      <Loader2 size={18} className="animate-spin" /> {t("pushing")}
-                      {pushElapsed > 0 && <span className="opacity-80">({pushElapsed}{t("seconds_short")})</span>}
-                    </>
-                  ) : (
-                    t("confirm_push_button")
+                  {pushing && pushProgress && (
+                    // Real, measured progress — a colored layer filling
+                    // left-to-right, width = actual completed/total blobs,
+                    // streamed from /api/push as each one lands.
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute inset-y-0 left-0 bg-white/20 transition-[width] duration-150 ease-out"
+                      style={{ width: `${(pushProgress.current / Math.max(pushProgress.total, 1)) * 100}%` }}
+                    />
                   )}
+                  <span className="relative z-10 flex items-center gap-2">
+                    {pushing ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" /> {t("pushing")}
+                        {pushProgress && (
+                          <span className="opacity-80">
+                            ({pushProgress.current}/{pushProgress.total})
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      t("confirm_push_button")
+                    )}
+                  </span>
                 </button>
               </div>
             )}
