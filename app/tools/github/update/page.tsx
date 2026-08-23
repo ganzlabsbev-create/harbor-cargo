@@ -375,7 +375,22 @@ function UpdateRepoPage() {
 
       for (const origPath of selectedReplace) {
         const cur = pathMap[origPath] ?? origPath;
-        if (cur === origPath) {
+        if (forcedReplace.has(origPath)) {
+          // This "replace" is actually a zipOnly/add file that got dragged
+          // onto an existing repo path (see resolvePendingMove's
+          // collidingStatus === "unchanged" branch) — origPath is the
+          // file's ORIGINAL zip location, which was never a real repo path
+          // to begin with. Emitting a delete for it is not just redundant,
+          // it's actively dangerous: if origPath happens to coincide with
+          // an unrelated existing repo folder, a bogus `{path: origPath,
+          // sha: null, type: "blob"}` tree entry collides with GitHub's own
+          // tree object at that path and the commit fails with
+          // GitRPC::BadObjectState. There's nothing at origPath to delete,
+          // so just add the new content at its (possibly moved)
+          // destination — GitHub overwrites in place since `cur` already
+          // exists under base_tree.
+          changes.push({ path: cur, action: "add", zipPath: origPath });
+        } else if (cur === origPath) {
           changes.push({ path: origPath, action: "replace" });
         } else {
           // Moved while being replaced: the old repo path shouldn't keep a
