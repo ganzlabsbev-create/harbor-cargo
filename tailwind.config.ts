@@ -3,7 +3,7 @@ import type { Config } from "tailwindcss";
 // Color tokens pulled from the harbor-cargo logo:
 // deep navy hull, orange + blue wave bands, off-white mark.
 const config: Config = {
-  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
