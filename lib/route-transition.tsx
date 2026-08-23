@@ -105,7 +105,7 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
     setClosing(false);
     setVisible(true);
     setPhase("starting");
-    setProgress(18); // immediate pop so it reads as "started", not a stray dot
+    setProgress(32); // immediate pop so it reads as "started", not a stray dot
 
     trickleTimerRef.current = setTimeout(() => {
       if (navIdRef.current !== id) return; // superseded by a newer nav
@@ -203,7 +203,7 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
             closing ? "opacity-0" : "opacity-100"
           }`}
         >
-          <div className="h-1 w-24 overflow-hidden rounded-full bg-white/20 shadow-card">
+          <div className="h-1 w-24 overflow-hidden rounded-full bg-white/10 shadow-card">
             <div
               className="h-full w-full origin-left rounded-full bg-harbor-mist/90"
               style={{ transform: `scaleX(${progress / 100})`, transition: PHASE_TRANSITION[phase] }}
