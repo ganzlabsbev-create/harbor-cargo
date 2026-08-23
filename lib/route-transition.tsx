@@ -19,11 +19,15 @@ export function useRouteTransition() {
   return useContext(RouteTransitionContext);
 }
 
-// Only actually show the overlay once navigation has been in flight this
-// long — most client-side route changes resolve well under it, and
-// flashing an overlay for a 40ms transition reads as more sluggish, not
-// less.
-const SHOW_DELAY_MS = 150;
+// Once shown, keep the overlay up for at least this long — App Router's
+// client-side navigation is often faster than a show-delay could ever
+// safely be (especially for a route Next already prefetched), so a
+// "wait N ms before showing, in case it's slow" approach never actually
+// shows anything: the page finishes and stop() fires first every time.
+// Showing immediately and enforcing a floor on visible duration instead
+// means every navigation gets a visible, non-flickery flash regardless of
+// how fast it resolves.
+const MIN_VISIBLE_MS = 260;
 // Failsafe: if the pathname never actually changes (a hash-only href that
 // slipped through, a navigation that errors before committing), don't
 // leave the user staring at a stuck overlay forever.
@@ -46,21 +50,22 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [visible, setVisible] = useState(false);
   const pendingRef = useRef(false);
-  const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shownAtRef = useRef(0);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const failsafeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function clearTimers() {
-    if (showTimerRef.current) clearTimeout(showTimerRef.current);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     if (failsafeRef.current) clearTimeout(failsafeRef.current);
-    showTimerRef.current = null;
+    hideTimerRef.current = null;
     failsafeRef.current = null;
   }
 
   function start() {
-    if (pendingRef.current) return;
-    pendingRef.current = true;
     clearTimers();
-    showTimerRef.current = setTimeout(() => setVisible(true), SHOW_DELAY_MS);
+    pendingRef.current = true;
+    shownAtRef.current = Date.now();
+    setVisible(true);
     failsafeRef.current = setTimeout(() => {
       pendingRef.current = false;
       setVisible(false);
@@ -70,14 +75,20 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
   function stop() {
     if (!pendingRef.current) return;
     pendingRef.current = false;
-    clearTimers();
-    setVisible(false);
+    if (failsafeRef.current) clearTimeout(failsafeRef.current);
+    failsafeRef.current = null;
+    const remaining = MIN_VISIBLE_MS - (Date.now() - shownAtRef.current);
+    if (remaining > 0) {
+      hideTimerRef.current = setTimeout(() => setVisible(false), remaining);
+    } else {
+      setVisible(false);
+    }
   }
 
   // The new route has actually committed (or we navigated back to the same
-  // one) — hide the overlay. Runs on every pathname change, including the
-  // first render, which is harmless since stop() is a no-op when nothing
-  // is pending.
+  // one) — hide the overlay (after its minimum visible window). Runs on
+  // every pathname change, including the first render, which is harmless
+  // since stop() is a no-op when nothing is pending.
   useEffect(() => {
     stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,6 +98,8 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
   // — which is how next/link renders, so this covers all 19+ existing
   // Link usages with no need to touch each call site — without
   // intercepting external links, downloads, new-tab, or modified clicks.
+  // Also covers browser back/forward via popstate, which never fires a
+  // click at all.
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (e.defaultPrevented || e.button !== 0) return;
@@ -107,8 +120,15 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
       if (url.pathname === window.location.pathname) return; // same-page (query/hash only)
       start();
     }
+    function onPopState() {
+      start();
+    }
     document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      window.removeEventListener("popstate", onPopState);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -120,7 +140,7 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
           aria-hidden
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/35 backdrop-blur-[1px]"
         >
-          <div className="h-1.5 w-32 overflow-hidden rounded-full bg-white/15">
+          <div className="h-1.5 w-32 overflow-hidden rounded-full bg-white/15 shadow-card">
             <div className="h-full w-1/3 animate-route-loading rounded-full bg-harbor-mist/90" />
           </div>
         </div>
