@@ -19,22 +19,36 @@ export function useRouteTransition() {
   return useContext(RouteTransitionContext);
 }
 
-// Progress trickles toward this cap while navigation is still pending —
-// never reaches 100% on its own, since we don't actually know how far
-// along a client-side nav is. Only stop() (the route having committed)
-// is allowed to complete the bar, so the fill always reflects real state
-// instead of a canned animation that loops independently of the page.
-const TRICKLE_CAP = 90;
-const TRICKLE_INTERVAL_MS = 200;
-// After stop() snaps the bar to 100%, hold it there briefly so the "done"
-// state is actually visible instead of disappearing mid-frame, then fade
-// the whole overlay out.
+// How far the bar is allowed to creep on its own while a nav is pending —
+// it can never reach 100% without stop() actually being called, so the
+// fill always reflects real state instead of a canned loop.
+const TRICKLE_TARGET = 85;
+// Two-stage timing instead of a JS interval: a quick pop-in so the bar
+// reads as "started" immediately, then ONE long CSS transition toward
+// TRICKLE_TARGET. A single continuous transition never stutters the way
+// re-triggering a transition every N ms can (each restart is a chance for
+// timer jitter to show up as a visible stall) — the browser just eases it
+// smoothly regardless of what else the main thread is doing, since it's a
+// transform (compositor-only), not a width (which repaints on every step).
+const POP_IN_MS = 150;
+const TRICKLE_MS = 6000;
+// After stop() snaps the bar to 100%, hold it there briefly so "done" is
+// actually visible instead of disappearing mid-frame, then fade out.
+const COMPLETE_MS = 200;
 const COMPLETE_HOLD_MS = 150;
 const FADE_MS = 180;
 // Failsafe: if the pathname never actually changes (a hash-only href that
 // slipped through, a navigation that errors before committing), don't
 // leave the user staring at a stuck overlay forever.
 const FAILSAFE_MS = 8000;
+
+type Phase = "starting" | "trickling" | "completing";
+
+const PHASE_TRANSITION: Record<Phase, string> = {
+  starting: `transform ${POP_IN_MS}ms ease-out`,
+  trickling: `transform ${TRICKLE_MS}ms cubic-bezier(0.15, 0.8, 0.3, 1)`,
+  completing: `transform ${COMPLETE_MS}ms ease-out`,
+};
 
 /**
  * Shows a centered pill + translucent scrim while a client-side route
@@ -54,13 +68,21 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
   const [visible, setVisible] = useState(false);
   const [closing, setClosing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState<Phase>("starting");
   const pendingRef = useRef(false);
-  const trickleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Bumped on every start(). Timers from a superseded navigation compare
+  // their captured id against this and bail if they no longer match,
+  // instead of applying stale state on top of whatever the newest
+  // navigation is doing — this is what was causing the occasional stuck
+  // bar when a second link got tapped before the first one's timers had
+  // finished running.
+  const navIdRef = useRef(0);
+  const trickleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const failsafeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function clearTimers() {
-    if (trickleTimerRef.current) clearInterval(trickleTimerRef.current);
+    if (trickleTimerRef.current) clearTimeout(trickleTimerRef.current);
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     if (failsafeRef.current) clearTimeout(failsafeRef.current);
     trickleTimerRef.current = null;
@@ -70,34 +92,40 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
 
   function start() {
     clearTimers();
+    const id = ++navIdRef.current;
     pendingRef.current = true;
     setClosing(false);
     setVisible(true);
-    setProgress(10); // immediate jump so it reads as "started", not stalled
-    trickleTimerRef.current = setInterval(() => {
-      setProgress((p) => {
-        if (p >= TRICKLE_CAP) return p;
-        // Diminishing steps as it approaches the cap — fast at first, then
-        // creeps, so it never visibly "finishes" before the route actually
-        // commits.
-        return Math.min(TRICKLE_CAP, p + (TRICKLE_CAP - p) * 0.15);
-      });
-    }, TRICKLE_INTERVAL_MS);
+    setPhase("starting");
+    setProgress(18); // immediate pop so it reads as "started", not a stray dot
+
+    trickleTimerRef.current = setTimeout(() => {
+      if (navIdRef.current !== id) return; // superseded by a newer nav
+      setPhase("trickling");
+      setProgress(TRICKLE_TARGET);
+    }, POP_IN_MS);
+
     failsafeRef.current = setTimeout(() => {
+      if (navIdRef.current !== id) return;
       pendingRef.current = false;
-      finishAndHide();
+      finishAndHide(id);
     }, FAILSAFE_MS);
   }
 
   // Snaps the bar to 100% (the one point where it's allowed to complete),
   // holds briefly so that's actually visible, then fades the overlay out.
-  function finishAndHide() {
-    if (trickleTimerRef.current) clearInterval(trickleTimerRef.current);
+  // Every step re-checks navIdRef so a delayed timer from a since-replaced
+  // navigation can never stomp on a newer one's state.
+  function finishAndHide(id: number) {
+    if (trickleTimerRef.current) clearTimeout(trickleTimerRef.current);
     trickleTimerRef.current = null;
+    setPhase("completing");
     setProgress(100);
     hideTimerRef.current = setTimeout(() => {
+      if (navIdRef.current !== id) return;
       setClosing(true);
       hideTimerRef.current = setTimeout(() => {
+        if (navIdRef.current !== id) return;
         setVisible(false);
         setClosing(false);
         setProgress(0);
@@ -110,7 +138,7 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
     pendingRef.current = false;
     if (failsafeRef.current) clearTimeout(failsafeRef.current);
     failsafeRef.current = null;
-    finishAndHide();
+    finishAndHide(navIdRef.current);
   }
 
   // The new route has actually committed (or we navigated back to the same
@@ -166,14 +194,14 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
       {visible && (
         <div
           aria-hidden
-          className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/10 transition-opacity duration-[180ms] ${
+          className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/20 transition-opacity duration-[180ms] ${
             closing ? "opacity-0" : "opacity-100"
           }`}
         >
           <div className="h-1 w-16 overflow-hidden rounded-full bg-white/20 shadow-card">
             <div
-              className="h-full rounded-full bg-harbor-mist/90 transition-[width] duration-200 ease-out"
-              style={{ width: `${progress}%` }}
+              className="h-full w-full origin-left rounded-full bg-harbor-mist/90"
+              style={{ transform: `scaleX(${progress / 100})`, transition: PHASE_TRANSITION[phase] }}
             />
           </div>
         </div>
