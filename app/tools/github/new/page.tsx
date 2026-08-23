@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, CheckCircle2, ExternalLink, Loader2, FolderTree } from "lucide-react";
 import Header from "@/components/Header";
+import AuthGate from "@/components/AuthGate";
 import UploadZone, { UploadedBlob } from "@/components/UploadZone";
 import EditableTreeView from "@/components/EditableTreeView";
 import ZipWarnings from "@/components/ZipWarnings";
@@ -166,6 +167,7 @@ function NewRepoPage() {
           <ChevronLeft size={16} /> {t("back")}
         </Link>
 
+        <AuthGate next="/tools/github/new">
         {result ? (
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-base-border bg-base-surface p-8 text-center shadow-card">
             <CheckCircle2 size={40} className="text-accent-green" />
@@ -266,6 +268,7 @@ function NewRepoPage() {
             )}
           </>
         )}
+        </AuthGate>
       </div>
       {pendingMove && (
         <ConfirmMoveDialog

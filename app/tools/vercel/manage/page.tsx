@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, Loader2, Rocket, Triangle } from "lucide-react";
 import Header from "@/components/Header";
+import AuthGate from "@/components/AuthGate";
 import { useLang } from "@/lib/i18n-context";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
 
@@ -52,6 +53,7 @@ export default function VercelManagePickerPage() {
         </Link>
         <h1 className="mb-5 font-display text-xl font-bold tracking-tight text-ink">{t("vercel_select_project_label")}</h1>
 
+        <AuthGate next="/tools/vercel/manage">
         {vercelConnected === false ? (
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-base-border bg-base-surface p-8 text-center shadow-card">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-harbor-blue to-harbor-navy text-white shadow-glow-blue">
@@ -93,6 +95,7 @@ export default function VercelManagePickerPage() {
             ))}
           </div>
         )}
+        </AuthGate>
       </div>
     </main>
   );

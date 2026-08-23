@@ -31,6 +31,18 @@ async function ensureSchema() {
       pushed_at TIMESTAMPTZ DEFAULT NOW()
     );
   `;
+  // Same cooldown model as `users.next_upload_at`, but for guests using
+  // Harbor Preview / PWA Generator (see app/tools/preview,
+  // app/tools/harbor/pwa) — those tools work without a GitHub session, so
+  // there's no `github_id` to key off of. Keyed by a coarse, non-identifying
+  // string (caller decides — see lib/rate-limit.ts) instead of anything
+  // that could identify a person; nothing else about a guest is stored.
+  await sql`
+    CREATE TABLE IF NOT EXISTS guest_rate_limits (
+      rate_key TEXT PRIMARY KEY,
+      next_upload_at TIMESTAMPTZ NOT NULL
+    );
+  `;
   initialized = true;
 }
 
@@ -89,5 +101,23 @@ export async function setNextUploadAt(userId: number, next: Date): Promise<void>
   await ensureSchema();
   await sql`
     UPDATE users SET next_upload_at = ${next.toISOString()} WHERE github_id = ${userId}
+  `;
+}
+
+export async function getGuestNextUploadAt(rateKey: string): Promise<Date | null> {
+  await ensureSchema();
+  const { rows } = await sql<{ next_upload_at: string }>`
+    SELECT next_upload_at FROM guest_rate_limits WHERE rate_key = ${rateKey}
+  `;
+  const value = rows[0]?.next_upload_at;
+  return value ? new Date(value) : null;
+}
+
+export async function setGuestNextUploadAt(rateKey: string, next: Date): Promise<void> {
+  await ensureSchema();
+  await sql`
+    INSERT INTO guest_rate_limits (rate_key, next_upload_at)
+    VALUES (${rateKey}, ${next.toISOString()})
+    ON CONFLICT (rate_key) DO UPDATE SET next_upload_at = EXCLUDED.next_upload_at
   `;
 }

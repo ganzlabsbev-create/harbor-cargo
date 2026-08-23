@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 import Header from "@/components/Header";
+import AuthGate from "@/components/AuthGate";
 import UploadZone, { UploadedBlob } from "@/components/UploadZone";
 import DiffTreeView, { DiffStatus, buildDiffTree } from "@/components/DiffTreeView";
 import RepoIcon from "@/components/RepoIcon";
@@ -433,6 +434,7 @@ function UpdateRepoPage() {
           <ChevronLeft size={16} /> {t("back")}
         </Link>
 
+        <AuthGate next="/tools/github/update">
         {result ? (
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-base-border bg-base-surface p-8 text-center shadow-card">
             <CheckCircle2 size={40} className="text-accent-green" />
@@ -603,6 +605,7 @@ function UpdateRepoPage() {
             )}
           </div>
         )}
+        </AuthGate>
       </div>
       {pendingMove && (
         <ConfirmMoveDialog

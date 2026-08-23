@@ -5,6 +5,7 @@ import UpdateBanner from "@/components/UpdateBanner";
 import CaptainHarbor from "@/components/CaptainHarbor";
 import { Analytics } from "@vercel/analytics/next";
 import HarborRegisterSW from "./harbor-register-sw";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 // Self-hosted via next/font (downloaded + bundled at build time, no runtime
@@ -24,9 +25,16 @@ const thaiFont = IBM_Plex_Sans_Thai({
   display: "swap",
 });
 
+const description =
+  "Upload a project ZIP and ship it straight to a GitHub repository or Vercel deployment — no install, works as a guest.";
+
 export const metadata: Metadata = {
-  title: "HARBOR CARGO",
-  description: "One harbor to ship your projects anywhere — starting with GitHub.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "HARBOR CARGO — Ship Your Projects",
+    template: "%s — HARBOR CARGO",
+  },
+  description,
   icons: {
     icon: [
       { url: "/icons/favicon-16x16.png", sizes: "16x16", type: "image/png" },
@@ -37,9 +45,12 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.webmanifest",
   openGraph: {
-    title: "HARBOR CARGO",
-    description: "One harbor to ship your projects anywhere.",
-    images: ["/icons/og-image.png"],
+    type: "website",
+    url: "/",
+    siteName: "HARBOR CARGO",
+    title: "HARBOR CARGO — Ship Your Projects",
+    description,
+    images: [{ url: "/icons/og-image.png" }],
   },
 };
 

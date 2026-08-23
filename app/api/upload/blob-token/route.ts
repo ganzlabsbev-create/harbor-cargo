@@ -8,8 +8,14 @@ import { getSession } from "@/lib/session";
  * functions. Generic — any future upload-based tool (not just the GitHub
  * uploader) can point at this same route. Rate limiting already happened at
  * /api/upload/rate-limit before this is ever called (see
- * components/UploadZone.tsx) — this route only checks that the caller is
- * signed in.
+ * components/UploadZone.tsx).
+ *
+ * Public: Harbor Preview and the PWA Generator upload without a GitHub
+ * session (see app/tools/preview, app/tools/harbor/pwa), so this no longer
+ * requires being signed in. It only stages a ZIP in Blob storage for
+ * analysis — it never touches GitHub/Vercel accounts, tokens, or private
+ * data, so it's safe to leave open the same way the rest of the
+ * analyze-only chain is.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
@@ -20,7 +26,6 @@ export async function POST(request: Request): Promise<NextResponse> {
       request,
       onBeforeGenerateToken: async () => {
         const session = await getSession();
-        if (!session) throw new Error("not_authenticated");
 
         return {
           allowedContentTypes: ["application/zip", "application/x-zip-compressed", "application/octet-stream"],
@@ -29,7 +34,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           // analyze/push step (which buffers the whole ZIP in memory) can't
           // blow up the function.
           maximumSizeInBytes: 200 * 1024 * 1024,
-          tokenPayload: JSON.stringify({ userId: session.userId }),
+          tokenPayload: JSON.stringify({ userId: session?.userId ?? null }),
         };
       },
       onUploadCompleted: async () => {

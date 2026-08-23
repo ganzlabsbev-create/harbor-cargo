@@ -4,7 +4,6 @@ import os from "os";
 import path from "path";
 import { nanoid } from "nanoid";
 import { del } from "@vercel/blob";
-import { getSession } from "@/lib/session";
 import { extractZip } from "@/lib/zip";
 import { detectFramework } from "@/lib/framework-detect";
 import { fetchBlobBuffer } from "@/lib/blob-fetch";
@@ -17,11 +16,17 @@ import { fetchBlobBuffer } from "@/lib/blob-fetch";
  * in place — the client reuses the same blob for the push step next — and
  * gets deleted there. If analysis fails, there's nothing left to keep it
  * for, so it's deleted here instead.
+ *
+ * Public: this only inspects a ZIP the caller just uploaded and returns a
+ * file tree + framework guess — nothing GitHub/Vercel-specific, nothing
+ * that requires an account. Harbor Preview and the PWA Generator both call
+ * this without a session (see app/tools/preview/page.tsx, which points
+ * UploadZone straight at this endpoint). The GitHub "new repo" flow still
+ * calls this same route to analyze before showing the push confirmation —
+ * pushing itself is a separate, still fully session-gated call to
+ * /api/push.
  */
 export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ ok: false, error: "not_authenticated" }, { status: 401 });
-
   const body = await req.json().catch(() => null);
   const blobUrl = body?.blobUrl;
   const blobPathname = body?.blobPathname;

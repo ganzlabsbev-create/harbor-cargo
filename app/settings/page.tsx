@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -15,30 +15,29 @@ import {
   Tag,
   ScrollText,
   ShieldCheck,
+  Github,
+  User as UserIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import LanguageToggle from "@/components/LanguageToggle";
 import { useLang } from "@/lib/i18n-context";
+import { useSession } from "@/lib/use-session";
 import { APP_VERSION } from "@/lib/version";
 
 export default function SettingsPage() {
   const { t } = useLang();
   const router = useRouter();
-  const [user, setUser] = useState<{ login: string; avatarUrl: string } | null>(null);
+  const { user, loading } = useSession();
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState<"latest" | "update" | null>(null);
 
-  useEffect(() => {
-    fetch("/api/me")
-      .then((res) => res.json())
-      .then((data) => data.ok && setUser(data.user))
-      .catch(() => {});
-  }, []);
-
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
+    // Guests can keep using Harbor Cargo, so logout returns home instead
+    // of forcing another trip through /login.
+    router.push("/");
+    router.refresh();
   }
 
   async function checkVersion() {
@@ -73,7 +72,11 @@ export default function SettingsPage() {
 
         <section className="mt-5 rounded-2xl border border-base-border bg-base-surface p-4 shadow-card">
           <h2 className="text-xs font-medium uppercase tracking-wide text-ink-faint">{t("settings_account")}</h2>
-          {user && (
+          {loading ? (
+            <div className="mt-3 flex items-center gap-3 text-sm text-ink-dim">
+              <Loader2 size={16} className="animate-spin" /> {t("checking_session")}
+            </div>
+          ) : user ? (
             <div className="mt-3 flex items-center gap-3">
               <Image
                 src={user.avatarUrl}
@@ -92,6 +95,22 @@ export default function SettingsPage() {
               >
                 <LogOut size={16} /> {t("logout")}
               </button>
+            </div>
+          ) : (
+            <div className="mt-3 flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-base-border bg-base-surface2 text-ink-dim">
+                <UserIcon size={20} strokeWidth={1.75} />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-ink">{t("settings_guest_label")}</p>
+                <p className="text-xs text-ink-faint">{t("settings_guest_desc")}</p>
+              </div>
+              <a
+                href={`/api/auth/github?next=${encodeURIComponent("/settings")}`}
+                className="flex items-center gap-1.5 rounded-lg border border-base-border px-3 py-2 text-sm text-ink"
+              >
+                <Github size={16} /> {t("login_with_github_button")}
+              </a>
             </div>
           )}
         </section>

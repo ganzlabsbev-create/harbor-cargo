@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSessionCookie } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/github";
 import { upsertUser } from "@/lib/db";
+import { safeReturnPath } from "@/lib/return-path";
 
 /**
  * Step 2 of the OAuth relay flow. GitHub redirects here with `code`.
@@ -18,14 +19,28 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get("state");
   const expectedState = req.cookies.get("harbor_oauth_state")?.value;
 
+  // On any failure below, send the user back to /login (carrying `next`
+  // along if we have one) rather than leaving them stuck — a cancelled or
+  // failed login should return to where they started, not lose state.
+  const failNext = safeReturnPath(req.cookies.get("harbor_oauth_next")?.value);
+  function loginFailRedirect(error: string) {
+    const url = new URL("/login", req.nextUrl.origin);
+    url.searchParams.set("error", error);
+    if (failNext) url.searchParams.set("next", failNext);
+    const r = NextResponse.redirect(url);
+    r.cookies.delete("harbor_oauth_state");
+    r.cookies.delete("harbor_oauth_next");
+    return r;
+  }
+
   if (!code || !state || !expectedState || state !== expectedState) {
-    return NextResponse.redirect(new URL("/login?error=oauth_state", req.nextUrl.origin));
+    return loginFailRedirect("oauth_state");
   }
 
   const clientId = process.env.GITHUB_OAUTH_CLIENT_ID;
   const clientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(new URL("/login?error=oauth_config", req.nextUrl.origin));
+    return loginFailRedirect("oauth_config");
   }
 
   const redirectUri = new URL("/api/auth/github/callback", req.nextUrl.origin).toString();
@@ -43,7 +58,7 @@ export async function GET(req: NextRequest) {
   const tokenData = await tokenRes.json();
 
   if (!tokenData.access_token) {
-    return NextResponse.redirect(new URL("/login?error=oauth_exchange", req.nextUrl.origin));
+    return loginFailRedirect("oauth_exchange");
   }
 
   const token: string = tokenData.access_token;
@@ -60,7 +75,9 @@ export async function GET(req: NextRequest) {
     // Non-fatal: Postgres may not be provisioned yet. The session still works.
   });
 
-  const res = NextResponse.redirect(new URL("/", req.nextUrl.origin));
+  const nextPath = safeReturnPath(req.cookies.get("harbor_oauth_next")?.value) || "/";
+  const res = NextResponse.redirect(new URL(nextPath, req.nextUrl.origin));
   res.cookies.delete("harbor_oauth_state");
+  res.cookies.delete("harbor_oauth_next");
   return res;
 }

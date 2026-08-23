@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, CheckCircle2, ExternalLink, Loader2, Plus, Trash2, Rocket } from "lucide-react";
 import Header from "@/components/Header";
+import AuthGate from "@/components/AuthGate";
 import RepoIcon from "@/components/RepoIcon";
 import { useLang } from "@/lib/i18n-context";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
@@ -200,6 +201,7 @@ export default function VercelNewPage() {
         </Link>
         <h1 className="mb-5 font-display text-xl font-bold tracking-tight text-ink">{t("vercel_back_title")}</h1>
 
+        <AuthGate next="/tools/vercel/new">
         {result ? (
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-base-border bg-base-surface p-8 text-center shadow-card">
             <CheckCircle2 size={40} className="text-accent-green" />
@@ -423,6 +425,7 @@ export default function VercelNewPage() {
             </button>
           </div>
         )}
+        </AuthGate>
       </div>
     </main>
   );

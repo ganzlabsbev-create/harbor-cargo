@@ -19,6 +19,7 @@ import {
   Check,
 } from "lucide-react";
 import Header from "@/components/Header";
+import AuthGate from "@/components/AuthGate";
 import { useLang } from "@/lib/i18n-context";
 import { VERCEL_FRAMEWORKS } from "@/lib/vercel-frameworks";
 import { addRecent, removeRecent } from "@/lib/recents";
@@ -225,6 +226,7 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
           <ChevronLeft size={16} /> {t("back")}
         </Link>
 
+        <AuthGate next={`/tools/vercel/manage/${projectId}`}>
         <div className="mb-2 flex items-center justify-between gap-2">
           <h1 className="min-w-0 truncate font-display text-xl font-bold tracking-tight text-ink">
             {project?.name || "..."}
@@ -320,6 +322,7 @@ export default function VercelProjectDashboard({ params }: { params: { projectId
             <DeployErrorCard deployError={deployError} t={t} />
           </>
         )}
+        </AuthGate>
       </div>
     </main>
   );
