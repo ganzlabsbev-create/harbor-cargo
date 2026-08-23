@@ -32,11 +32,12 @@ const TRICKLE_TARGET = 85;
 // transform (compositor-only), not a width (which repaints on every step).
 const POP_IN_MS = 150;
 const TRICKLE_MS = 6000;
-// After stop() snaps the bar to 100%, hold it there briefly so "done" is
-// actually visible instead of disappearing mid-frame, then fade out.
-const COMPLETE_MS = 200;
-const COMPLETE_HOLD_MS = 150;
-const FADE_MS = 180;
+// stop() means the route has ALREADY committed — the new page is already
+// visible underneath the scrim, so there's nothing to gain by holding the
+// bar at 100% before starting to dismiss it. Snap + fade start at the same
+// time; FADE_MS is the only delay left before the overlay actually unmounts.
+const COMPLETE_MS = 120;
+const FADE_MS = 150;
 // Failsafe: if the pathname never actually changes (a hash-only href that
 // slipped through, a navigation that errors before committing), don't
 // leave the user staring at a stuck overlay forever.
@@ -112,25 +113,22 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
     }, FAILSAFE_MS);
   }
 
-  // Snaps the bar to 100% (the one point where it's allowed to complete),
-  // holds briefly so that's actually visible, then fades the overlay out.
-  // Every step re-checks navIdRef so a delayed timer from a since-replaced
-  // navigation can never stomp on a newer one's state.
+  // Snaps the bar to 100% and starts fading the whole overlay out in the
+  // same tick — the route has already committed by the time this runs, so
+  // there's nothing to wait on. Re-checks navIdRef so a delayed timer from
+  // a since-replaced navigation can never stomp on a newer one's state.
   function finishAndHide(id: number) {
     if (trickleTimerRef.current) clearTimeout(trickleTimerRef.current);
     trickleTimerRef.current = null;
     setPhase("completing");
     setProgress(100);
+    setClosing(true);
     hideTimerRef.current = setTimeout(() => {
       if (navIdRef.current !== id) return;
-      setClosing(true);
-      hideTimerRef.current = setTimeout(() => {
-        if (navIdRef.current !== id) return;
-        setVisible(false);
-        setClosing(false);
-        setProgress(0);
-      }, FADE_MS);
-    }, COMPLETE_HOLD_MS);
+      setVisible(false);
+      setClosing(false);
+      setProgress(0);
+    }, FADE_MS);
   }
 
   function stop() {
@@ -194,7 +192,7 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
       {visible && (
         <div
           aria-hidden
-          className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/20 transition-opacity duration-[180ms] ${
+          className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/20 transition-opacity duration-[150ms] ${
             closing ? "opacity-0" : "opacity-100"
           }`}
         >
