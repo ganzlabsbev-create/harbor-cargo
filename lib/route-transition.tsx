@@ -22,22 +22,29 @@ export function useRouteTransition() {
 // How far the bar is allowed to creep on its own while a nav is pending —
 // it can never reach 100% without stop() actually being called, so the
 // fill always reflects real state instead of a canned loop.
-const TRICKLE_TARGET = 85;
+const TRICKLE_TARGET = 88;
 // Two-stage timing instead of a JS interval: a quick pop-in so the bar
-// reads as "started" immediately, then ONE long CSS transition toward
+// reads as "started" immediately, then ONE CSS transition toward
 // TRICKLE_TARGET. A single continuous transition never stutters the way
 // re-triggering a transition every N ms can (each restart is a chance for
 // timer jitter to show up as a visible stall) — the browser just eases it
 // smoothly regardless of what else the main thread is doing, since it's a
 // transform (compositor-only), not a width (which repaints on every step).
-const POP_IN_MS = 150;
-const TRICKLE_MS = 6000;
+// TRICKLE_MS must be tuned to how fast real navigations actually resolve —
+// a value that's too long (was 6000ms) means most real navigations finish
+// while the bar is still near its start, which read as "barely moves,
+// then the page just changes." Most App Router client nav (prefetched
+// routes especially) commits well under a second, so the trickle needs to
+// be most of the way there within that window, not over several seconds.
+const POP_IN_MS = 100;
+const TRICKLE_MS = 700;
 // stop() means the route has ALREADY committed — the new page is already
 // visible underneath the scrim, so there's nothing to gain by holding the
 // bar at 100% before starting to dismiss it. Snap + fade start at the same
-// time; FADE_MS is the only delay left before the overlay actually unmounts.
-const COMPLETE_MS = 120;
-const FADE_MS = 150;
+// time, and both are kept short so the overlay is gone within ~150ms of
+// the route committing instead of visibly lingering over it.
+const COMPLETE_MS = 70;
+const FADE_MS = 110;
 // Failsafe: if the pathname never actually changes (a hash-only href that
 // slipped through, a navigation that errors before committing), don't
 // leave the user staring at a stuck overlay forever.
@@ -47,7 +54,7 @@ type Phase = "starting" | "trickling" | "completing";
 
 const PHASE_TRANSITION: Record<Phase, string> = {
   starting: `transform ${POP_IN_MS}ms ease-out`,
-  trickling: `transform ${TRICKLE_MS}ms cubic-bezier(0.15, 0.8, 0.3, 1)`,
+  trickling: `transform ${TRICKLE_MS}ms cubic-bezier(0.05, 0.85, 0.15, 1)`,
   completing: `transform ${COMPLETE_MS}ms ease-out`,
 };
 
@@ -192,11 +199,11 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
       {visible && (
         <div
           aria-hidden
-          className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/20 transition-opacity duration-[150ms] ${
+          className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/20 transition-opacity duration-[110ms] ${
             closing ? "opacity-0" : "opacity-100"
           }`}
         >
-          <div className="h-1 w-16 overflow-hidden rounded-full bg-white/20 shadow-card">
+          <div className="h-1 w-24 overflow-hidden rounded-full bg-white/20 shadow-card">
             <div
               className="h-full w-full origin-left rounded-full bg-harbor-mist/90"
               style={{ transform: `scaleX(${progress / 100})`, transition: PHASE_TRANSITION[phase] }}
