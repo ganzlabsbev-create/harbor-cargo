@@ -23,6 +23,7 @@ import AuthGate from "@/components/AuthGate";
 import { useLang } from "@/lib/i18n-context";
 import { VERCEL_FRAMEWORKS } from "@/lib/vercel-frameworks";
 import { addRecent, removeRecent } from "@/lib/recents";
+import { useRouteTransition } from "@/lib/route-transition";
 
 type Section = "overview" | "env" | "domains" | "build" | "git" | "deployments" | "danger";
 
@@ -990,6 +991,7 @@ function DangerSection({
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canDelete = confirmName === project.name;
+  const { start: startRouteTransition } = useRouteTransition();
 
   async function handleDelete() {
     if (!canDelete) return;
@@ -999,6 +1001,7 @@ function DangerSection({
       const res = await fetch(`/api/vercel/projects/${projectId}`, { method: "DELETE" });
       const data = await res.json();
       if (!data.ok) throw new Error(data.detail || data.error);
+      startRouteTransition();
       router.push("/tools/vercel/manage");
     } catch (err: any) {
       setError(String(err?.message || err));

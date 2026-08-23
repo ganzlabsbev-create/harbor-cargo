@@ -33,6 +33,7 @@ import { useBlobCleanup } from "@/lib/use-blob-cleanup";
 import { extractZipClient, ClientFile } from "@/lib/client-zip";
 import { buildStaticPreview, revokePreview, BuiltPreview } from "@/lib/static-preview";
 import { runDevServerPreview, stopDevServerPreview, isDevServerSupported, DevServerHandle } from "@/lib/dev-server-preview";
+import { useRouteTransition } from "@/lib/route-transition";
 
 interface AnalyzeResult {
   ok: true;
@@ -59,6 +60,7 @@ interface ViewportPreset {
 export default function PreviewPage() {
   const { t } = useLang();
   const router = useRouter();
+  const { start: startRouteTransition } = useRouteTransition();
 
   const [blob, setBlob] = useState<UploadedBlob | null>(null);
   const [fileName, setFileName] = useState<string>("");
@@ -266,6 +268,7 @@ export default function PreviewPage() {
       blobPathname: blob.pathname,
       fileName,
     });
+    startRouteTransition();
     router.push(`/tools/github/${githubMode}?${params.toString()}`);
   }
 

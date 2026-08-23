@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, IBM_Plex_Sans_Thai, Space_Grotesk } from "next/font/google";
 import { LangProvider } from "@/lib/i18n-context";
+import { RouteTransitionProvider } from "@/lib/route-transition";
 import UpdateBanner from "@/components/UpdateBanner";
 import CaptainHarbor from "@/components/CaptainHarbor";
 import { Analytics } from "@vercel/analytics/next";
@@ -65,12 +66,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="th" className={`${bodyFont.variable} ${displayFont.variable} ${thaiFont.variable}`}>
       <body className="font-sans antialiased">
         <LangProvider>
-          {children}
-          <UpdateBanner />
-          {/* Rendered once at the root so the panel/conversation state
-              survives client-side navigation between pages — see
-              components/CaptainHarbor.tsx for why that matters. */}
-          <CaptainHarbor />
+          <RouteTransitionProvider>
+            {children}
+            <UpdateBanner />
+            {/* Rendered once at the root so the panel/conversation state
+                survives client-side navigation between pages — see
+                components/CaptainHarbor.tsx for why that matters. */}
+            <CaptainHarbor />
+          </RouteTransitionProvider>
         </LangProvider>
         <Analytics />
       <HarborRegisterSW />

@@ -7,10 +7,12 @@ import Logo from "@/components/Logo";
 import LanguageToggle from "@/components/LanguageToggle";
 import { useLang } from "@/lib/i18n-context";
 import { safeReturnPath } from "@/lib/return-path";
+import { useRouteTransition } from "@/lib/route-transition";
 
 function LoginPageInner() {
   const { t } = useLang();
   const router = useRouter();
+  const { start: startRouteTransition } = useRouteTransition();
   const searchParams = useSearchParams();
   const next = safeReturnPath(searchParams.get("next"));
   const githubHref = next ? `/api/auth/github?next=${encodeURIComponent(next)}` : "/api/auth/github";
@@ -24,7 +26,10 @@ function LoginPageInner() {
           this "/login" route no longer sits behind a forced redirect, so
           there's no reason to trap anyone here. */}
       <button
-        onClick={() => router.push(next || "/")}
+        onClick={() => {
+          startRouteTransition();
+          router.push(next || "/");
+        }}
         aria-label={t("back")}
         className="absolute left-4 top-4 rounded-lg p-2 text-ink-dim transition hover:text-ink"
       >

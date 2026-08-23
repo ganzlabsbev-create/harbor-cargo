@@ -23,11 +23,13 @@ import Header from "@/components/Header";
 import LanguageToggle from "@/components/LanguageToggle";
 import { useLang } from "@/lib/i18n-context";
 import { useSession } from "@/lib/use-session";
+import { useRouteTransition } from "@/lib/route-transition";
 import { APP_VERSION } from "@/lib/version";
 
 export default function SettingsPage() {
   const { t } = useLang();
   const router = useRouter();
+  const { start: startRouteTransition } = useRouteTransition();
   const { user, loading } = useSession();
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState<"latest" | "update" | null>(null);
@@ -36,6 +38,7 @@ export default function SettingsPage() {
     await fetch("/api/auth/logout", { method: "POST" });
     // Guests can keep using Harbor Cargo, so logout returns home instead
     // of forcing another trip through /login.
+    startRouteTransition();
     router.push("/");
     router.refresh();
   }
