@@ -35,8 +35,9 @@ interface IncomingChange {
  * components/UploadZone.tsx) plus the change list decided on the diff
  * screen. Unselected files are left untouched in the repo, since
  * commitFileChanges builds on top of the branch's current tree (base_tree).
- * The blob is always deleted once this request is done with it, success or
- * failure, so nothing lingers in storage.
+ * The blob is deleted once the commit succeeds — but left in place on any
+ * failure, so a retry (e.g. after a transient GitHub error) can run against
+ * the same blob instead of forcing the user to re-upload the ZIP.
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -69,7 +70,8 @@ export async function POST(req: NextRequest) {
         (c.zipPath === undefined || isSafePath(c.zipPath))
     )
   ) {
-    await del(blobPathname).catch(() => {});
+    // Don't delete the blob here — this is a client-side validation failure,
+    // not a used-up upload, and the blob is still good for a corrected retry.
     return NextResponse.json({ ok: false, error: "no_changes" }, { status: 400 });
   }
 
@@ -99,11 +101,16 @@ export async function POST(req: NextRequest) {
       framework: null,
     }).catch(() => {});
 
+    // Only delete the blob once the commit has actually succeeded — on
+    // failure it needs to stay put so a retry doesn't 404 fetching it again.
+    await del(blobPathname).catch(() => {});
+
     return NextResponse.json({ ok: true, commitUrl });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: "commit_failed", detail: String(err?.message || err) }, { status: 500 });
   } finally {
+    // Local temp dir only — unrelated to the blob-retry concern above, so
+    // this can always be cleaned up regardless of outcome.
     fs.promises.rm(extractDir, { recursive: true, force: true }).catch(() => {});
-    await del(blobPathname).catch(() => {});
   }
 }

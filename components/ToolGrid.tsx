@@ -23,7 +23,7 @@ export default function ToolGrid() {
       icon: <Image src="/harbor-preview.svg" alt="" width={28} height={28} unoptimized />,
       title: t("tool_harbor_title"),
       description: t("tool_harbor_desc"),
-      badge: loading ? undefined : t("tool_badge_ready"),
+      badge: loading ? undefined : user ? undefined : t("tool_badge_ready"),
     },
     {
       href: "/tools/github",

@@ -111,6 +111,16 @@ export async function POST(req: NextRequest) {
     }
 
     if (mode === "update") {
+      // NOTE: nothing in the app calls this branch anymore. pushFilesToRepo
+      // builds a brand-new tree with no base_tree and force-pushes it —
+      // correct for "new" (nothing to preserve on an empty repo), but wrong
+      // for updating an existing one, since it silently deletes every repo
+      // file that wasn't in the uploaded ZIP. components/CaptainHarbor.tsx
+      // used to call this for its "update" flow; it now posts to
+      // /api/commit-diff instead (scoped, base_tree-based — same endpoint
+      // app/tools/github/update/page.tsx already used). Left in place
+      // rather than removed in case something needs a deliberate full
+      // replace in the future, but treat this as mode="new"-only in practice.
       const owner = String(body?.owner || "");
       const repo = String(body?.repo || "");
       const commitMessage = String(body?.commitMessage || "Update via HARBOR CARGO");

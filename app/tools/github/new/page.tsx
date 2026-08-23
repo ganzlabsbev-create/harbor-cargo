@@ -12,7 +12,7 @@ import ZipWarnings from "@/components/ZipWarnings";
 import ConfirmMoveDialog from "@/components/ConfirmMoveDialog";
 import { useLang } from "@/lib/i18n-context";
 import { useBlobCleanup } from "@/lib/use-blob-cleanup";
-import { flattenFiles, buildTreeFromPaths, basename, computeMoveTarget, findMoveCollision, dedupeMoveTarget } from "@/lib/tree-utils";
+import { flattenFiles, buildTreeFromPaths, listFolderPaths, basename, computeMoveTarget, findMoveCollision, dedupeMoveTarget } from "@/lib/tree-utils";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
 
 interface AnalyzeResult {
@@ -56,6 +56,7 @@ function NewRepoPage() {
     targetFolder: string;
     candidate: string;
     collidingPath: string;
+    collidingKind: "file" | "folder";
   } | null>(null);
   const pushElapsed = useElapsedSeconds(pushing);
 
@@ -99,11 +100,13 @@ function NewRepoPage() {
     const candidate = computeMoveTarget(currentPath, targetFolder);
     if (candidate === currentPath) return;
 
-    const collidingPath = findMoveCollision(candidate, currentPath, Object.values(pathMap));
-    if (collidingPath) {
-      // Same-name file already sits at the target — ask before doing
-      // anything, instead of silently renaming (the old behavior).
-      setPendingMove({ originalPath, currentPath, targetFolder, candidate, collidingPath });
+    const folderPaths = listFolderPaths(displayTree);
+    const collision = findMoveCollision(candidate, currentPath, Object.values(pathMap), folderPaths);
+    if (collision) {
+      // Same-name file (or an existing folder) already sits at the target —
+      // ask before doing anything, instead of silently renaming (the old
+      // behavior) or, worse, silently landing a file on top of a folder.
+      setPendingMove({ originalPath, currentPath, targetFolder, candidate, collidingPath: collision.path, collidingKind: collision.kind });
       return;
     }
     setPathMap((prev) => ({ ...prev, [originalPath]: candidate }));
@@ -111,10 +114,17 @@ function NewRepoPage() {
 
   function resolvePendingMove(action: "replace" | "rename") {
     if (!pendingMove) return;
-    const { originalPath, currentPath, targetFolder, candidate, collidingPath } = pendingMove;
+    const { originalPath, currentPath, targetFolder, candidate, collidingPath, collidingKind } = pendingMove;
+    // A folder can't be replaced by a dropped file — ConfirmMoveDialog
+    // already hides the "replace" button for this case, but guard here too.
+    if (collidingKind === "folder" && action === "replace") {
+      setPendingMove(null);
+      return;
+    }
 
     if (action === "rename") {
-      const deduped = dedupeMoveTarget(candidate, currentPath, targetFolder, Object.values(pathMap));
+      const folderPaths = listFolderPaths(displayTree);
+      const deduped = dedupeMoveTarget(candidate, currentPath, targetFolder, Object.values(pathMap), folderPaths);
       setPathMap((prev) => ({ ...prev, [originalPath]: deduped }));
     } else {
       const collidingKey = Object.keys(pathMap).find((k) => pathMap[k] === collidingPath && k !== originalPath);
@@ -273,6 +283,7 @@ function NewRepoPage() {
       {pendingMove && (
         <ConfirmMoveDialog
           fileName={basename(pendingMove.collidingPath)}
+          kind={pendingMove.collidingKind}
           onReplace={() => resolvePendingMove("replace")}
           onRename={() => resolvePendingMove("rename")}
           onCancel={() => setPendingMove(null)}

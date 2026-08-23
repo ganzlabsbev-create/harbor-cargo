@@ -14,7 +14,7 @@ import ConfirmMoveDialog from "@/components/ConfirmMoveDialog";
 import { useLang } from "@/lib/i18n-context";
 import { cleanupBlob, useBlobCleanup } from "@/lib/use-blob-cleanup";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
-import { basename, computeMoveTarget, findMoveCollision, dedupeMoveTarget } from "@/lib/tree-utils";
+import { basename, computeMoveTarget, findMoveCollision, dedupeMoveTarget, listFolderFullPaths } from "@/lib/tree-utils";
 import { addRecent, removeRecent } from "@/lib/recents";
 
 interface RepoOption {
@@ -91,6 +91,7 @@ function UpdateRepoPage() {
     targetFolder: string;
     candidate: string;
     collidingPath: string;
+    collidingKind: "file" | "folder";
   } | null>(null);
 
   const [commitMessage, setCommitMessage] = useState("");
@@ -275,9 +276,10 @@ function UpdateRepoPage() {
     const candidate = computeMoveTarget(currentPath, targetFolder);
     if (candidate === currentPath) return;
 
-    const collidingPath = findMoveCollision(candidate, currentPath, Object.values(pathMap));
-    if (collidingPath) {
-      setPendingMove({ origPath, currentPath, targetFolder, candidate, collidingPath });
+    const folderPaths = listFolderFullPaths(diffTree);
+    const collision = findMoveCollision(candidate, currentPath, Object.values(pathMap), folderPaths);
+    if (collision) {
+      setPendingMove({ origPath, currentPath, targetFolder, candidate, collidingPath: collision.path, collidingKind: collision.kind });
       return;
     }
     setPathMap((prev) => ({ ...prev, [origPath]: candidate }));
@@ -285,10 +287,17 @@ function UpdateRepoPage() {
 
   function resolvePendingMove(action: "replace" | "rename") {
     if (!pendingMove) return;
-    const { origPath, currentPath, targetFolder, candidate, collidingPath } = pendingMove;
+    const { origPath, currentPath, targetFolder, candidate, collidingPath, collidingKind } = pendingMove;
+    // A folder can't be replaced by a dropped file — ConfirmMoveDialog
+    // already hides the "replace" button for this case, but guard here too.
+    if (collidingKind === "folder" && action === "replace") {
+      setPendingMove(null);
+      return;
+    }
 
     if (action === "rename") {
-      const deduped = dedupeMoveTarget(candidate, currentPath, targetFolder, Object.values(pathMap));
+      const folderPaths = listFolderFullPaths(diffTree);
+      const deduped = dedupeMoveTarget(candidate, currentPath, targetFolder, Object.values(pathMap), folderPaths);
       setPathMap((prev) => ({ ...prev, [origPath]: deduped }));
       setPendingMove(null);
       return;
@@ -610,6 +619,7 @@ function UpdateRepoPage() {
       {pendingMove && (
         <ConfirmMoveDialog
           fileName={basename(pendingMove.collidingPath)}
+          kind={pendingMove.collidingKind}
           onReplace={() => resolvePendingMove("replace")}
           onRename={() => resolvePendingMove("rename")}
           onCancel={() => setPendingMove(null)}

@@ -1425,8 +1425,12 @@ export default function CaptainHarbor() {
     setChat((c) => ({ ...c, step: "executing" }));
 
     const isUpdate = chat.action === "update";
+    // "Remove files" is deliberately not a step here: Captain Harbor has no
+    // per-file review UI for repoOnly files (unlike the update page's
+    // DiffTreeView checkboxes), so the automatic flow never deletes repo
+    // files — see the commit-diff changes build below.
     const stepLabels = isUpdate
-      ? [s.stepUpload, s.stepUpdateFiles, s.stepRemoveFiles, s.stepCommit]
+      ? [s.stepUpload, s.stepUpdateFiles, s.stepCommit]
       : [s.stepUpload, s.stepCreateRepo, s.stepPushFiles];
 
     const execId = addMsg({
@@ -1439,21 +1443,58 @@ export default function CaptainHarbor() {
     updateMsg(execId, { steps: stepLabels.map((label, i) => ({ label, done: i === 0 })) });
 
     try {
-      const body: any = { blobUrl: chat.blobUrl, blobPathname: chat.blobPathname, mode: chat.action };
+      let res: Response;
       if (isUpdate) {
-        body.owner = chat.owner;
-        body.repo = chat.repo;
-        body.commitMessage = "Update via Captain Harbor";
+        // Scoped, base_tree-based commit — the same endpoint
+        // app/tools/github/update/page.tsx uses, instead of /api/push's
+        // full-tree replace (which has no base_tree and force-pushes,
+        // silently deleting every repo file not in the uploaded ZIP).
+        // Built straight from the diff preview already shown to the user:
+        // modified -> replace, zipOnly ("added") -> add. repoOnly
+        // ("removed") files are intentionally left out — Captain Harbor
+        // has no per-file review UI for deletions, so nothing is ever
+        // auto-deleted from this flow.
+        const preview = chat.preview;
+        const changes = [
+          ...(preview?.modified || []).map((path) => ({ path, action: "replace" as const })),
+          ...(preview?.added || []).map((path) => ({ path, action: "add" as const })),
+        ];
+        if (changes.length === 0) {
+          // Only repoOnly ("removed") entries in the diff — since those are
+          // never auto-deleted from this flow, there's nothing left to
+          // commit. Surface that plainly instead of calling an endpoint
+          // that will reject an empty change set.
+          trackStep("push_failed", { provider: "github", action: "update", error: "no_changes" });
+          updateMsg(execId, { text: describeError(s, "no_changes"), steps: undefined });
+          setChat((c) => ({ ...c, step: "await_confirm" }));
+          return;
+        }
+        res = await fetch("/api/commit-diff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            blobUrl: chat.blobUrl,
+            blobPathname: chat.blobPathname,
+            owner: chat.owner,
+            repo: chat.repo,
+            branch: chat.branch,
+            commitMessage: "Update via Captain Harbor",
+            changes,
+          }),
+        });
       } else {
-        body.repoName = chat.repo;
-        body.private = true;
+        res = await fetch("/api/push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            blobUrl: chat.blobUrl,
+            blobPathname: chat.blobPathname,
+            mode: "new",
+            repoName: chat.repo,
+            private: true,
+          }),
+        });
       }
-
-      const res = await fetch("/api/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
       const data = await res.json();
 
       if (!data.ok) {
