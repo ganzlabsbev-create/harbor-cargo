@@ -19,15 +19,18 @@ export function useRouteTransition() {
   return useContext(RouteTransitionContext);
 }
 
-// Once shown, keep the overlay up for at least this long — App Router's
-// client-side navigation is often faster than a show-delay could ever
-// safely be (especially for a route Next already prefetched), so a
-// "wait N ms before showing, in case it's slow" approach never actually
-// shows anything: the page finishes and stop() fires first every time.
-// Showing immediately and enforcing a floor on visible duration instead
-// means every navigation gets a visible, non-flickery flash regardless of
-// how fast it resolves.
-const MIN_VISIBLE_MS = 260;
+// Progress trickles toward this cap while navigation is still pending —
+// never reaches 100% on its own, since we don't actually know how far
+// along a client-side nav is. Only stop() (the route having committed)
+// is allowed to complete the bar, so the fill always reflects real state
+// instead of a canned animation that loops independently of the page.
+const TRICKLE_CAP = 90;
+const TRICKLE_INTERVAL_MS = 200;
+// After stop() snaps the bar to 100%, hold it there briefly so the "done"
+// state is actually visible instead of disappearing mid-frame, then fade
+// the whole overlay out.
+const COMPLETE_HOLD_MS = 150;
+const FADE_MS = 180;
 // Failsafe: if the pathname never actually changes (a hash-only href that
 // slipped through, a navigation that errors before committing), don't
 // leave the user staring at a stuck overlay forever.
@@ -49,14 +52,18 @@ const FAILSAFE_MS = 8000;
 export function RouteTransitionProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [visible, setVisible] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [progress, setProgress] = useState(0);
   const pendingRef = useRef(false);
-  const shownAtRef = useRef(0);
+  const trickleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const failsafeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function clearTimers() {
+    if (trickleTimerRef.current) clearInterval(trickleTimerRef.current);
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     if (failsafeRef.current) clearTimeout(failsafeRef.current);
+    trickleTimerRef.current = null;
     hideTimerRef.current = null;
     failsafeRef.current = null;
   }
@@ -64,12 +71,38 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
   function start() {
     clearTimers();
     pendingRef.current = true;
-    shownAtRef.current = Date.now();
+    setClosing(false);
     setVisible(true);
+    setProgress(10); // immediate jump so it reads as "started", not stalled
+    trickleTimerRef.current = setInterval(() => {
+      setProgress((p) => {
+        if (p >= TRICKLE_CAP) return p;
+        // Diminishing steps as it approaches the cap — fast at first, then
+        // creeps, so it never visibly "finishes" before the route actually
+        // commits.
+        return Math.min(TRICKLE_CAP, p + (TRICKLE_CAP - p) * 0.15);
+      });
+    }, TRICKLE_INTERVAL_MS);
     failsafeRef.current = setTimeout(() => {
       pendingRef.current = false;
-      setVisible(false);
+      finishAndHide();
     }, FAILSAFE_MS);
+  }
+
+  // Snaps the bar to 100% (the one point where it's allowed to complete),
+  // holds briefly so that's actually visible, then fades the overlay out.
+  function finishAndHide() {
+    if (trickleTimerRef.current) clearInterval(trickleTimerRef.current);
+    trickleTimerRef.current = null;
+    setProgress(100);
+    hideTimerRef.current = setTimeout(() => {
+      setClosing(true);
+      hideTimerRef.current = setTimeout(() => {
+        setVisible(false);
+        setClosing(false);
+        setProgress(0);
+      }, FADE_MS);
+    }, COMPLETE_HOLD_MS);
   }
 
   function stop() {
@@ -77,12 +110,7 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
     pendingRef.current = false;
     if (failsafeRef.current) clearTimeout(failsafeRef.current);
     failsafeRef.current = null;
-    const remaining = MIN_VISIBLE_MS - (Date.now() - shownAtRef.current);
-    if (remaining > 0) {
-      hideTimerRef.current = setTimeout(() => setVisible(false), remaining);
-    } else {
-      setVisible(false);
-    }
+    finishAndHide();
   }
 
   // The new route has actually committed (or we navigated back to the same
@@ -138,10 +166,15 @@ export function RouteTransitionProvider({ children }: { children: React.ReactNod
       {visible && (
         <div
           aria-hidden
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/35 backdrop-blur-[1px]"
+          className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/10 transition-opacity duration-[180ms] ${
+            closing ? "opacity-0" : "opacity-100"
+          }`}
         >
-          <div className="h-1.5 w-32 overflow-hidden rounded-full bg-white/15 shadow-card">
-            <div className="h-full w-1/3 animate-route-loading rounded-full bg-harbor-mist/90" />
+          <div className="h-1 w-16 overflow-hidden rounded-full bg-white/20 shadow-card">
+            <div
+              className="h-full rounded-full bg-harbor-mist/90 transition-[width] duration-200 ease-out"
+              style={{ width: `${progress}%` }}
+            />
           </div>
         </div>
       )}

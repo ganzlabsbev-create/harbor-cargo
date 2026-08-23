@@ -55,18 +55,6 @@ const config: Config = {
         xl: "1rem",
         "2xl": "1.375rem",
       },
-      keyframes: {
-        "route-loading": {
-          "0%": { transform: "translateX(-100%)" },
-          "50%": { transform: "translateX(60%)" },
-          "100%": { transform: "translateX(220%)" },
-        },
-      },
-      animation: {
-        // Indeterminate sliding fill for the centered page-transition pill
-        // — see lib/route-transition.tsx.
-        "route-loading": "route-loading 1.1s ease-in-out infinite",
-      },
     },
   },
   plugins: [],
