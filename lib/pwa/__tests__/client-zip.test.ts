@@ -36,6 +36,19 @@ test("strips a single wrapping root folder (GitHub-style download)", async () =>
   assert.deepEqual(paths, ["package.json", "src/index.ts"]);
 });
 
+test("preserves a lone top-level folder that isn't a wrapped project root", async () => {
+  // No package.json/index.html directly inside "lib/" — this is a real
+  // folder the upload is meant to keep, not a GitHub-zip-style wrapper
+  // that happens to look identical structurally (regression test for the
+  // "lib/github.ts becomes github.ts at the root" bug).
+  const zipBytes = await buildZip({
+    "lib/github.ts": "export {}",
+  });
+  const { files } = await extractZipClientWithWarnings(zipBytes);
+  const paths = files.map((f) => f.path).sort();
+  assert.deepEqual(paths, ["lib/github.ts"]);
+});
+
 test("rejects absolute-path entries instead of writing outside the project", async () => {
   // Note: jszip's own loader already collapses plain "../" sequences via an
   // internal path-resolve step before we ever see entry names (verified

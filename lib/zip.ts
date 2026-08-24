@@ -85,8 +85,19 @@ export function extractZip(zipBuffer: Buffer, extractDir: string): ExtractedProj
   const survivingNames = [...normalizedNames.values()];
   const topLevelNames = new Set(survivingNames.map((n) => n.split("/")[0]).filter(Boolean));
   const onlyRoot = [...topLevelNames][0];
-  const hasSingleRoot = topLevelNames.size === 1 && survivingNames.every((n) => n.startsWith(`${onlyRoot}/`) || n === onlyRoot);
-  const rootPrefix = hasSingleRoot ? `${onlyRoot}/` : "";
+  const allUnderOneRoot = topLevelNames.size === 1 && survivingNames.every((n) => n.startsWith(`${onlyRoot}/`) || n === onlyRoot);
+  // "Every entry shares one common first segment" is also true of a project
+  // that's legitimately just one folder deep at its root (e.g. the whole
+  // upload is "lib/" containing nothing else) — structurally identical to a
+  // GitHub-style wrapper, so that alone isn't enough signal. Only strip when
+  // the folder actually looks like a wrapped project root: a recognized
+  // root marker sitting directly inside it. Without this, a real folder
+  // like "lib/" was getting silently unwrapped and dropped from every path
+  // instead of preserved — a single "lib/github.ts" entry became
+  // "github.ts" at the true root.
+  const ROOT_MARKERS = ["package.json", "index.html"];
+  const hasWrapperRoot = allUnderOneRoot && ROOT_MARKERS.some((marker) => survivingNames.includes(`${onlyRoot}/${marker}`));
+  const rootPrefix = hasWrapperRoot ? `${onlyRoot}/` : "";
 
   let fileCount = 0;
   let totalUncompressed = 0;
