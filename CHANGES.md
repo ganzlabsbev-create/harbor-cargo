@@ -60,9 +60,10 @@ Settings และ Download Project เข้ากับ state "เลือก
 - **`app/tools/github/settings/[owner]/[repo]/page.tsx`** — เพิ่มปุ่ม "Download Project"
   ไว้บนสุดของหน้า Settings index ด้วย (ไม่ต้องผ่าน Update flow ก็ดาวน์โหลดได้)
 
-- **`app/tools/github/update/page.tsx`** — ยังคงมีลิงก์ "Settings" และปุ่ม "Download Project"
-  ใน header ของ state ที่เลือก repo แล้วเหมือนรอบก่อน (เป็นทางลัดเสริม ไม่ใช่ entry point หลัก
-  อีกต่อไป — entry point หลักคือการ์ดใหม่ใน `app/tools/github/page.tsx`)
+- **`app/tools/github/update/page.tsx`** — เอาลิงก์ "Settings"/ปุ่ม "Download Project" ที่เคย
+  ฝังไว้ใน header ของ state เลือก repo แล้วออก (ตามที่ขอ) เหลือแค่ "change repo" เหมือนเดิม —
+  ตอนนี้ GitHub Settings และ Download Project เข้าถึงได้จากการ์ดเครื่องมือเฉพาะใน
+  `app/tools/github/page.tsx` เท่านั้น ไม่ผูกกับ flow Update อีกต่อไป
 
 - **`lib/i18n.ts`** — เพิ่มคีย์ TH/EN ทั้งหมดสำหรับ UI ใหม่ (GitHub Settings, Danger Zone,
   Download Project)
