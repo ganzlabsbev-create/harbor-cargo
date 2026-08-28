@@ -1,16 +1,22 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Settings2, AlertTriangle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings2, AlertTriangle, Download } from "lucide-react";
 import Header from "@/components/Header";
 import AuthGate from "@/components/AuthGate";
+import DownloadProjectModal from "@/components/DownloadProjectModal";
 import { useLang } from "@/lib/i18n-context";
 
 /**
- * GitHub Settings index (build spec section 2). Pure navigation, not a
- * long form — each category is its own route/page so mobile gets a short
- * list of tappable cards instead of one giant accordion (spec sections 2
- * and 15).
+ * GitHub Settings index (build spec section 2) — this is also the closest
+ * thing Harbor has to the "repository page" from spec section 9, so
+ * Download Project's entry point lives here too, not just buried inside
+ * the Update flow.
+ *
+ * Pure navigation, not a long form — each category is its own route/page
+ * so mobile gets a short list of tappable cards instead of one giant
+ * accordion (spec sections 2 and 15).
  *
  * Only categories with a real API implementation behind them are listed —
  * Branches/Actions/Variables/Access aren't wired up yet in this pass (no
@@ -22,6 +28,18 @@ export default function GithubSettingsIndex({ params }: { params: { owner: strin
   const { owner, repo } = params;
   const base = `/tools/github/settings/${owner}/${repo}`;
 
+  const [defaultBranch, setDefaultBranch] = useState<string | null>(null);
+  const [showDownload, setShowDownload] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/github/${owner}/${repo}/settings`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok) setDefaultBranch(data.settings.default_branch);
+      })
+      .catch(() => {});
+  }, [owner, repo]);
+
   const categories = [
     { href: `${base}/repository`, icon: Settings2, title: t("gh_settings_repository"), desc: t("gh_settings_repository_desc") },
   ];
@@ -30,13 +48,24 @@ export default function GithubSettingsIndex({ params }: { params: { owner: strin
     <main className="min-h-dvh bg-base-bg pb-16">
       <Header />
       <div className="mx-auto max-w-2xl px-4 py-6">
-        <Link href="/tools/github/update" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-dim">
+        <Link href="/tools/github/settings" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-dim">
           <ChevronLeft size={16} /> {t("back")}
         </Link>
 
         <AuthGate next={base}>
-          <h1 className="font-display text-xl font-bold tracking-tight text-ink">{t("gh_settings_title")}</h1>
-          <p className="mt-1 text-sm text-ink-faint">{owner}/{repo}</p>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="font-display text-xl font-bold tracking-tight text-ink">{t("gh_settings_title")}</h1>
+              <p className="mt-1 truncate text-sm text-ink-faint">{owner}/{repo}</p>
+            </div>
+            <button
+              onClick={() => setShowDownload(true)}
+              disabled={!defaultBranch}
+              className="flex shrink-0 items-center gap-2 rounded-xl bg-harbor-orange px-3.5 py-2.5 text-sm font-semibold text-white shadow-glow-orange disabled:opacity-50"
+            >
+              <Download size={16} /> {t("download_project_title")}
+            </button>
+          </div>
 
           <div className="mt-5 flex flex-col gap-2">
             {categories.map((c) => (
@@ -75,6 +104,10 @@ export default function GithubSettingsIndex({ params }: { params: { owner: strin
           </div>
         </AuthGate>
       </div>
+
+      {showDownload && defaultBranch && (
+        <DownloadProjectModal owner={owner} repo={repo} defaultBranch={defaultBranch} onClose={() => setShowDownload(false)} />
+      )}
     </main>
   );
 }

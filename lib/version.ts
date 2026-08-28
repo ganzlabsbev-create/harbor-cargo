@@ -18,8 +18,9 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-08",
     notes: [
       "New: GitHub Settings. From an already-selected repo in the Update flow, manage Repository settings (description, homepage, visibility, topics, default branch, Issues/Discussions/Wiki/Projects) with an explicit 'Unsaved changes' bar — nothing saves until you tap Save.",
+      "New: GitHub Settings now also has its own card on the GitHub tool chooser (next to New repository / Update repository) — pick a repo there to jump straight to its settings, instead of only reaching it from mid-way through the Update flow.",
       "New: Danger Zone — archive or permanently delete a repository, both behind explicit confirmation (delete requires typing the exact repository name, re-checked on the server).",
-      "New: Download Project. Pull a ZIP of a repo (current or another branch, whole repo or a specific folder, with/without hidden files and .github) straight from Harbor with live 'X / Y files' progress — no need to leave Harbor for GitHub's Code → Download ZIP.",
+      "Download Project. Pull a ZIP of a repo (current or another branch, whole repo or a specific folder, with/without hidden files and .github) straight from Harbor with live 'X / Y files' progress — no need to leave Harbor for GitHub's Code → Download ZIP. Reachable from the Settings page or from an already-selected repo in the Update flow.",
     ],
   },
   {

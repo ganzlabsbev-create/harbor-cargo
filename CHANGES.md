@@ -50,9 +50,19 @@ Settings และ Download Project เข้ากับ state "เลือก
 - **`app/tools/github/settings/[owner]/[repo]/danger/page.tsx`** (ใหม่) — Danger Zone,
   delete ต้องพิมพ์ชื่อ repo ให้ตรงก่อนกดได้
 
-- **`app/tools/github/update/page.tsx`** — เพิ่มลิงก์ "Settings" และปุ่ม "Download Project"
-  เข้าไปใน header ของ state ที่เลือก repo แล้ว (จุดเดียวใน codebase เดิมที่รู้ owner/repo/branch
-  อยู่แล้วโดยไม่ต้องสร้างหน้าใหม่)
+- **`app/tools/github/page.tsx`** — เพิ่มการ์ดที่สาม "GitHub Settings" ต่อจาก New/Update
+  repository ตามที่ควรจะเป็น (รอบแรกที่ส่งไปลืมเพิ่ม entry point นี้ — ฝังไว้แค่ในหน้า
+  Update ตอนเลือก repo แล้ว ทำให้หาไม่เจอ แก้แล้วในรอบนี้)
+
+- **`app/tools/github/settings/page.tsx`** (ใหม่) — หน้าเลือก repo สำหรับเข้าสู่ GitHub
+  Settings โดยตรง (ปลายทางของการ์ดใหม่ด้านบน) ก่อนเข้าหน้า Settings index ของ repo นั้น
+
+- **`app/tools/github/settings/[owner]/[repo]/page.tsx`** — เพิ่มปุ่ม "Download Project"
+  ไว้บนสุดของหน้า Settings index ด้วย (ไม่ต้องผ่าน Update flow ก็ดาวน์โหลดได้)
+
+- **`app/tools/github/update/page.tsx`** — ยังคงมีลิงก์ "Settings" และปุ่ม "Download Project"
+  ใน header ของ state ที่เลือก repo แล้วเหมือนรอบก่อน (เป็นทางลัดเสริม ไม่ใช่ entry point หลัก
+  อีกต่อไป — entry point หลักคือการ์ดใหม่ใน `app/tools/github/page.tsx`)
 
 - **`lib/i18n.ts`** — เพิ่มคีย์ TH/EN ทั้งหมดสำหรับ UI ใหม่ (GitHub Settings, Danger Zone,
   Download Project)
