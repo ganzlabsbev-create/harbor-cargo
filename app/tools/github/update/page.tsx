@@ -11,6 +11,8 @@ import DiffTreeView, { DiffStatus, buildDiffTree } from "@/components/DiffTreeVi
 import RepoIcon from "@/components/RepoIcon";
 import ZipWarnings from "@/components/ZipWarnings";
 import ConfirmMoveDialog from "@/components/ConfirmMoveDialog";
+import DownloadProjectModal from "@/components/DownloadProjectModal";
+import { Settings2, Download } from "lucide-react";
 import { useLang } from "@/lib/i18n-context";
 import { cleanupBlob, useBlobCleanup } from "@/lib/use-blob-cleanup";
 import { basename, computeMoveTarget, findMoveCollision, dedupeMoveTarget, listFolderFullPaths } from "@/lib/tree-utils";
@@ -92,6 +94,8 @@ function UpdateRepoPage() {
     collidingPath: string;
     collidingKind: "file" | "folder";
   } | null>(null);
+
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   const [commitMessage, setCommitMessage] = useState("");
   const [committing, setCommitting] = useState(false);
@@ -547,31 +551,56 @@ function UpdateRepoPage() {
                   {t("branch_label")}: {selected.default_branch}
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  // The uploaded blob is only reused by /api/commit-diff — if
-                  // we're leaving before that, nothing will ever delete it
-                  // otherwise, so clean it up explicitly here.
-                  // Only clean up the blob here if it's NOT the one carried
-                  // over from Harbor Preview — that one may still be needed
-                  // to diff against whichever repo the user picks next.
-                  if (blob && blob.pathname !== carriedBlobPathname) cleanupBlob(blob.pathname);
-                  setSelected(null);
-                  setBlob(null);
-                  setDiff(null);
-                  setDiffWarnings(null);
-                  setPathMap({});
-                  setRepoOnlyShas({});
-                  setExcludedRepoOnly(new Set());
-                  setForcedReplace(new Set());
-                  setCarryConsumed(false);
-                  setCarryError(null);
-                }}
-                className="text-xs text-harbor-orange"
-              >
-                {t("change_repo")}
-              </button>
+              <div className="flex shrink-0 items-center gap-3">
+                <Link
+                  href={`/tools/github/settings/${selected.full_name.split("/")[0]}/${selected.full_name.split("/")[1]}`}
+                  className="flex items-center gap-1 text-xs text-ink-dim"
+                  title={t("gh_settings_title")}
+                >
+                  <Settings2 size={14} /> {t("gh_settings_title")}
+                </Link>
+                <button
+                  onClick={() => setShowDownloadModal(true)}
+                  className="flex items-center gap-1 text-xs text-ink-dim"
+                  title={t("download_project_title")}
+                >
+                  <Download size={14} /> {t("download_project_title")}
+                </button>
+                <button
+                  onClick={() => {
+                    // The uploaded blob is only reused by /api/commit-diff — if
+                    // we're leaving before that, nothing will ever delete it
+                    // otherwise, so clean it up explicitly here.
+                    // Only clean up the blob here if it's NOT the one carried
+                    // over from Harbor Preview — that one may still be needed
+                    // to diff against whichever repo the user picks next.
+                    if (blob && blob.pathname !== carriedBlobPathname) cleanupBlob(blob.pathname);
+                    setSelected(null);
+                    setBlob(null);
+                    setDiff(null);
+                    setDiffWarnings(null);
+                    setPathMap({});
+                    setRepoOnlyShas({});
+                    setExcludedRepoOnly(new Set());
+                    setForcedReplace(new Set());
+                    setCarryConsumed(false);
+                    setCarryError(null);
+                  }}
+                  className="text-xs text-harbor-orange"
+                >
+                  {t("change_repo")}
+                </button>
+              </div>
             </div>
+
+            {showDownloadModal && (
+              <DownloadProjectModal
+                owner={selected.full_name.split("/")[0]}
+                repo={selected.full_name.split("/")[1]}
+                defaultBranch={selected.default_branch}
+                onClose={() => setShowDownloadModal(false)}
+              />
+            )}
 
             {!diff ? (
               carriedBlobUrl && !carryError ? (

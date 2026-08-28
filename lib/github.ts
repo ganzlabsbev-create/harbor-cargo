@@ -234,6 +234,169 @@ export async function pushFilesToRepo(
   return `https://github.com/${owner}/${repo}`;
 }
 
+/** Full repo settings surface used by GitHub Settings > Repository. */
+export interface RepoSettings {
+  name: string;
+  full_name: string;
+  description: string | null;
+  homepage: string | null;
+  private: boolean;
+  default_branch: string;
+  topics: string[];
+  has_issues: boolean;
+  has_projects: boolean;
+  has_wiki: boolean;
+  has_discussions: boolean;
+  archived: boolean;
+  permissions?: { admin?: boolean; push?: boolean; pull?: boolean };
+}
+
+/** GET /repos/{owner}/{repo} normalized down to the fields Settings needs. */
+export async function getRepoSettings(token: string, owner: string, repo: string): Promise<RepoSettings> {
+  const r = await gh(token, `/repos/${owner}/${repo}`);
+  return {
+    name: r.name,
+    full_name: r.full_name,
+    description: r.description ?? null,
+    homepage: r.homepage ?? null,
+    private: !!r.private,
+    default_branch: r.default_branch || "main",
+    topics: Array.isArray(r.topics) ? r.topics : [],
+    has_issues: !!r.has_issues,
+    has_projects: !!r.has_projects,
+    has_wiki: !!r.has_wiki,
+    has_discussions: !!r.has_discussions,
+    archived: !!r.archived,
+    permissions: r.permissions,
+  };
+}
+
+export interface RepoSettingsPatch {
+  description?: string;
+  homepage?: string;
+  private?: boolean;
+  default_branch?: string;
+  has_issues?: boolean;
+  has_projects?: boolean;
+  has_wiki?: boolean;
+  has_discussions?: boolean;
+}
+
+/** PATCH /repos/{owner}/{repo} — only the fields the caller actually changed. */
+export async function updateRepoSettings(
+  token: string,
+  owner: string,
+  repo: string,
+  patch: RepoSettingsPatch
+): Promise<RepoSettings> {
+  const r = await gh(token, `/repos/${owner}/${repo}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+  return getRepoSettingsFromRaw(r);
+}
+
+function getRepoSettingsFromRaw(r: any): RepoSettings {
+  return {
+    name: r.name,
+    full_name: r.full_name,
+    description: r.description ?? null,
+    homepage: r.homepage ?? null,
+    private: !!r.private,
+    default_branch: r.default_branch || "main",
+    topics: Array.isArray(r.topics) ? r.topics : [],
+    has_issues: !!r.has_issues,
+    has_projects: !!r.has_projects,
+    has_wiki: !!r.has_wiki,
+    has_discussions: !!r.has_discussions,
+    archived: !!r.archived,
+    permissions: r.permissions,
+  };
+}
+
+/** PUT /repos/{owner}/{repo}/topics — topics have their own dedicated endpoint. */
+export async function updateRepoTopics(token: string, owner: string, repo: string, topics: string[]): Promise<string[]> {
+  const r = await gh(token, `/repos/${owner}/${repo}/topics`, {
+    method: "PUT",
+    body: JSON.stringify({ names: topics }),
+  });
+  return Array.isArray(r.names) ? r.names : [];
+}
+
+/** Lists branches (name + protected flag) — used for the default-branch picker and Download's branch selector. */
+export async function listBranches(
+  token: string,
+  owner: string,
+  repo: string
+): Promise<{ name: string; protected: boolean }[]> {
+  const perPage = 100;
+  const results: any[] = [];
+  let page = 1;
+  while (true) {
+    const data = await gh(token, `/repos/${owner}/${repo}/branches?per_page=${perPage}&page=${page}`);
+    if (!Array.isArray(data) || data.length === 0) break;
+    results.push(...data);
+    if (data.length < perPage) break;
+    page++;
+  }
+  return results.map((b) => ({ name: b.name, protected: !!b.protected }));
+}
+
+export interface BranchProtection {
+  requiresPullRequest: boolean;
+  requiredApprovingReviewCount: number | null;
+  requiredStatusChecks: string[];
+  allowForcePushes: boolean;
+  allowDeletions: boolean;
+}
+
+/** GET branch protection. Returns null (not an error) for an unprotected branch — 404 is the expected shape there. */
+export async function getBranchProtection(
+  token: string,
+  owner: string,
+  repo: string,
+  branch: string
+): Promise<BranchProtection | null> {
+  try {
+    const p = await gh(token, `/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/protection`);
+    return {
+      requiresPullRequest: !!p.required_pull_request_reviews,
+      requiredApprovingReviewCount: p.required_pull_request_reviews?.required_approving_review_count ?? null,
+      requiredStatusChecks: p.required_status_checks?.contexts ?? [],
+      allowForcePushes: !!p.allow_force_pushes?.enabled,
+      allowDeletions: !!p.allow_deletions?.enabled,
+    };
+  } catch (err) {
+    if (err instanceof GitHubApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+/** Archives or unarchives a repo — reversible, so it lives in Danger Zone but isn't a full delete. */
+export async function setRepoArchived(token: string, owner: string, repo: string, archived: boolean): Promise<void> {
+  await gh(token, `/repos/${owner}/${repo}`, { method: "PATCH", body: JSON.stringify({ archived }) });
+}
+
+/** Renames a repo in place (same owner). */
+export async function renameRepo(token: string, owner: string, repo: string, newName: string): Promise<RepoSettings> {
+  const r = await gh(token, `/repos/${owner}/${repo}`, { method: "PATCH", body: JSON.stringify({ name: newName }) });
+  return getRepoSettingsFromRaw(r);
+}
+
+/** Permanently deletes a repo. Irreversible — caller must have already confirmed via exact-name entry. */
+export async function deleteRepo(token: string, owner: string, repo: string): Promise<void> {
+  await gh(token, `/repos/${owner}/${repo}`, { method: "DELETE" });
+}
+
+/** Fetches one blob's raw bytes by sha — same low-level object the commit path already uses to write blobs. */
+export async function getBlobContent(token: string, owner: string, repo: string, sha: string): Promise<Buffer> {
+  const data = await gh(token, `/repos/${owner}/${repo}/git/blobs/${sha}`);
+  if (data.encoding !== "base64") {
+    throw new GitHubApiError(500, "github_error", "Unexpected blob encoding from GitHub.");
+  }
+  return Buffer.from(data.content, "base64");
+}
+
 export function sanitizeRepoName(name: string): string {
   return name
     .trim()

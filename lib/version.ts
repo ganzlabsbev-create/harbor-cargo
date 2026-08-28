@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.21.0";
+export const APP_VERSION = "0.22.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.22.0",
+    date: "2026-08",
+    notes: [
+      "New: GitHub Settings. From an already-selected repo in the Update flow, manage Repository settings (description, homepage, visibility, topics, default branch, Issues/Discussions/Wiki/Projects) with an explicit 'Unsaved changes' bar — nothing saves until you tap Save.",
+      "New: Danger Zone — archive or permanently delete a repository, both behind explicit confirmation (delete requires typing the exact repository name, re-checked on the server).",
+      "New: Download Project. Pull a ZIP of a repo (current or another branch, whole repo or a specific folder, with/without hidden files and .github) straight from Harbor with live 'X / Y files' progress — no need to leave Harbor for GitHub's Code → Download ZIP.",
+    ],
+  },
   {
     version: "0.21.0",
     date: "2026-08",
