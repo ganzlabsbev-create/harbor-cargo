@@ -103,7 +103,7 @@ const MAX_RATE_LIMIT_RETRIES = 5;
 async function gh(token: string, pathname: string, init?: RequestInit) {
   let attempt = 0;
   while (true) {
-    const res = await fetch(`${API}${pathname}`, { ...init, headers: headers(token) });
+    const res = await fetch(`${API}${pathname}`, { ...init, headers: { ...headers(token), ...(init?.headers as Record<string, string> | undefined) } });
     if (res.ok) {
       return res.json();
     }
@@ -395,6 +395,76 @@ export async function getBlobContent(token: string, owner: string, repo: string,
     throw new GitHubApiError(500, "github_error", "Unexpected blob encoding from GitHub.");
   }
   return Buffer.from(data.content, "base64");
+}
+
+/**
+ * GitHub Code (build spec: read + edit a single file). Uses the Contents
+ * API first since it returns content + sha in one call; for files over
+ * ~1MB GitHub's Contents API omits the body (`content` comes back empty,
+ * `truncated: true`), so this falls back to the same Git Blob API
+ * getBlobContent()/commitFileChanges() already use, keyed off the sha the
+ * Contents API still gives us.
+ */
+export interface FileReadResult {
+  path: string;
+  sha: string;
+  size: number;
+  content: string;
+  isBinary: boolean;
+}
+
+function looksBinary(buf: Buffer): boolean {
+  // A NUL byte in the first few KB is the same heuristic git itself uses.
+  const sample = buf.subarray(0, Math.min(buf.length, 8000));
+  return sample.includes(0);
+}
+
+export async function getFileContent(token: string, owner: string, repo: string, path: string, ref: string): Promise<FileReadResult> {
+  const data = await gh(token, `/repos/${owner}/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`);
+  if (Array.isArray(data)) {
+    throw new GitHubApiError(400, "is_directory", "That path is a folder, not a file.");
+  }
+
+  let buf: Buffer;
+  if (data.truncated || !data.content) {
+    buf = await getBlobContent(token, owner, repo, data.sha);
+  } else {
+    buf = Buffer.from(data.content, data.encoding === "base64" ? "base64" : "utf8");
+  }
+
+  const isBinary = looksBinary(buf);
+  return {
+    path,
+    sha: data.sha,
+    size: data.size ?? buf.length,
+    content: isBinary ? "" : buf.toString("utf8"),
+    isBinary,
+  };
+}
+
+export interface CodeSearchMatch {
+  path: string;
+  fragments: string[];
+}
+
+/**
+ * "Quick" full-text search via GitHub's own code search index
+ * (build spec: full-text search across every file). Fast and doesn't cost
+ * per-file API calls, but GitHub only indexes each repo's default branch
+ * and there's sometimes a short delay after a push before new content is
+ * searchable — see the "deep search" fallback (app/api/.../code/corpus)
+ * for a slower but exhaustive/any-branch alternative.
+ */
+export async function searchCode(token: string, owner: string, repo: string, query: string): Promise<CodeSearchMatch[]> {
+  const q = `${query} repo:${owner}/${repo}`;
+  const data = await gh(token, `/search/code?q=${encodeURIComponent(q)}&per_page=50`, {
+    headers: { Accept: "application/vnd.github.text-match+json" },
+  });
+  const items = Array.isArray(data.items) ? data.items : [];
+  return items.map((item: any) => ({
+    path: item.path,
+    fragments: Array.isArray(item.text_matches) ? item.text_matches.map((m: any) => String(m.fragment || "")).filter(Boolean) : [],
+  }));
 }
 
 export function sanitizeRepoName(name: string): string {

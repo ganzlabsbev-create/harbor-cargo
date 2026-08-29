@@ -1,76 +1,95 @@
-# Harbor Cargo — รอบแก้ไขที่ 4 (GitHub Settings + Download Project)
+# Harbor Cargo — รอบแก้ไขที่ 5 (GitHub Code — โค้ดเอดิเตอร์ในตัว)
 
 ## สรุปสิ่งที่เพิ่ม
 
-เพิ่ม GitHub Settings และ Download Project เข้าไปใน Harbor Cargo v0.22.0 ตามสเปกที่ระบุ
-โดยยึด codebase/architecture เดิมทั้งหมด — ไม่มี GitHub client ใหม่, ไม่มี ZIP dependency ใหม่,
-ไม่มี database/backend ใหม่
+เพิ่มเครื่องมือใหม่ **GitHub Code** (v0.23.0) — เอดิเตอร์แก้โค้ดในรีโปแบบเต็มรูปแบบ อยู่ใน
+หน้าเครื่องมือ GitHub เป็นการ์ดของตัวเอง (ต่อจาก New repository / Update repository / Settings)
+ไม่ปนกับ flow อัปโหลด/อัปเดตเดิม ตามที่ขอ
 
-**ข้อค้นพบสำคัญตอนสำรวจ codebase ก่อนเริ่มแก้ (Phase 1):** Harbor Cargo ไม่มีหน้า
-"repository page" แบบ Files/Branches/Deployments tabs ตามที่สเปกสมมติไว้ — ของจริงคือ
-เครื่องมืออัปโหลด ZIP ขึ้น GitHub (New / Update) เท่านั้น ดังนั้นจึงผูก entry point ของ
-Settings และ Download Project เข้ากับ state "เลือก repo แล้ว" ใน flow Update ที่มีอยู่เดิม
-แทนการสร้าง navigation ใหม่ทั้งชุด และตัดหมวด Branches/Actions/Variables/Access ออกจากรอบนี้
-เพราะไม่มี API abstraction เดิมให้ reuse (ไม่ทำ fake control ตามกฎในสเปก)
+โครงสร้างพื้นฐาน (repo tree, blob content, commit) reuse จาก `lib/github.ts` เดิมทั้งหมด
+(`getRepoTree`, `getBlobContent`, `commitFileChanges`) — ไม่มี GitHub client ใหม่
+
+## dependency ใหม่ (จำเป็นจริง ไม่มีให้ reuse)
+
+CodeMirror 6 (`@codemirror/*`) สำหรับ syntax highlighting + error checking แบบเรียลไทม์ —
+เช็คแล้วโปรเจกต์ไม่มี code editor library อยู่เดิม จำเป็นต้องเพิ่ม เลือก CodeMirror แทน Monaco
+เพราะเบากว่าและรองรับ touch/มือถือดีกว่า ธีมเขียนขึ้นเองจาก token สีเดิมของ Harbor
+(`lib/code-theme.ts`) ไม่ใช้ธีมสำเร็จรูป
+
+## ฟีเจอร์หลักตามที่ขอ
+
+1. **ไฟล์ต้นไม้ + กดแก้ + กดอัปเดต** — `components/code/RepoFileTree.tsx` แสดง tree จริง
+   กดไฟล์เปิดในเอดิเตอร์ แก้แล้วกด "Commit" อัปเดตขึ้น GitHub ทันที (ผ่านหน้ารีวิว diff
+   ก่อน 1 แตะ เพื่อความปลอดภัย เหมือนแพทเทิร์น Danger Zone เดิม) แถวในทรีทำใหญ่ขึ้น
+   (สูง ~46px) ให้กดง่ายบนมือถือ แต่ไม่ใหญ่จนเปลืองพื้นที่จอ
+
+2. **ค้นหาไฟล์แบบพิมพ์ทีละโฟลเดอร์** — `lib/fuzzy-match.ts` fuzzy filter ฝั่ง client
+   พิมพ์ `โฟลเดอร์/โฟลเดอร์/ไฟล์` แล้วลิสต์ผลลัพธ์กรองสดทุกตัวอักษรที่พิมพ์ ไม่ต้อง match
+   ตรงตัวทั้งหมด (พิมพ์ `cmp/hdr` เจอ `components/Header.tsx` ได้)
+
+3. **ตรวจ error ระหว่างเขียน** — ใช้ syntax tree ที่ CodeMirror ของแต่ละภาษาสร้างอยู่แล้ว
+   เดินหา error node เอง (ไม่เพิ่ม parser ใหม่) ครอบคลุม JS/TS/JSX/TSX, JSON (เช็ค key
+   parse ด้วย), CSS, HTML, Markdown, Python — เป็นการเช็ค **syntax** ไม่ใช่ type-check
+   เชิงความหมาย (เช่น TS type error) ซึ่งต้องรัน TypeScript compiler ในเบราว์เซอร์ ของหนักกว่านี้
+   มาก ยังไม่รวมในรอบนี้
+
+4. **ค้นหาโค้ดในทุกไฟล์ (ไม่ใช่แค่ชื่อไฟล์)** — สองโหมดตามที่คุยกันไว้:
+   - **แบบเร็ว**: ใช้ GitHub Code Search API (`/search/code`) ของจริง ค้นเฉพาะ default
+     branch อาจหน่วงหลังพุชใหม่ๆ
+   - **แบบละเอียด**: ดึงเนื้อหาไฟล์ข้อความทุกไฟล์มาครั้งเดียว (มี progress + cap ขนาด/จำนวน
+     ไฟล์แบบเดียวกับ Download Project) แล้วค้นสดในเบราว์เซอร์ทุกตัวอักษรที่พิมพ์ ค้นได้ทุก branch
+
+## ของเสริมที่ทำเพิ่มให้ (ตามที่คุยไว้ก่อนเริ่ม)
+
+- Command-style: แยกแท็บ ไฟล์ / แก้ไข / ค้นหา ชัดเจน ไม่ต้องสลับโหมด
+- แก้ได้หลายไฟล์สะสมไว้ก่อน แล้ว commit รวมทีเดียวได้ (ปุ่ม "Commit (N)" บนสุด) หรือจะ
+  save ทีละไฟล์ก็ได้ (ปุ่ม "บันทึกไฟล์นี้" ในเอดิเตอร์)
+- รีวิว diff แบบ real diff (add/remove ต่อบรรทัด) ก่อน commit ทุกครั้ง — `lib/line-diff.ts`
+  (เขียนเอง ไม่เพิ่ม dependency)
+- สลับ branch ได้ในตัว (ล็อกไว้ระหว่างมีการแก้ไขค้าง กันสับสน)
+- New file / Rename / Delete จากเมนูในทรี
+- Draft กันหาย — พิมพ์ค้างไว้แล้วหลุดหน้า/รีเฟรช เนื้อหายังอยู่ (`lib/code-draft-store.ts`,
+  localStorage ฝั่ง browser จริง ไม่ใช่ Artifact)
+- แจ้งไฟล์ binary/ใหญ่เกินก่อนเปิด แทนที่จะเปิดแล้วพัง
+- Conflict check ก่อน commit — ถ้าไฟล์ถูกแก้จากที่อื่นระหว่างที่กำลังแก้อยู่ จะไม่ยอม push
+  ทับเงียบๆ แต่แจ้งชัดเจนว่าไฟล์ไหนชนกันบ้าง
 
 ## ไฟล์ที่แก้ / เพิ่ม
 
-- **`lib/github.ts`** — เพิ่ม method เข้า abstraction เดิม (ไม่สร้าง client ใหม่):
-  `getRepoSettings`, `updateRepoSettings`, `updateRepoTopics`, `listBranches`,
-  `getBranchProtection`, `setRepoArchived`, `renameRepo`, `deleteRepo`, `getBlobContent`
-  (ตัวหลังใช้ Git Data API เดียวกับ path การ commit ไฟล์เดิม)
+**lib**
+- `lib/github.ts` — เพิ่ม `getFileContent`, `searchCode` (reuse `gh()` เดิม)
+- `lib/fuzzy-match.ts` (ใหม่), `lib/line-diff.ts` (ใหม่), `lib/code-lang.ts` (ใหม่),
+  `lib/code-theme.ts` (ใหม่), `lib/code-draft-store.ts` (ใหม่), `lib/code-changes.ts` (ใหม่)
+- `lib/i18n.ts` — เพิ่มคีย์ TH/EN ทั้งหมดสำหรับ GitHub Code, เปลี่ยนชื่อการ์ด GitHub บนหน้า
+  home จาก "GitHub Uploader" เป็น "GitHub" เฉยๆ (ไม่มีคำว่าอัปโหลดในชื่อ)
+- `lib/version.ts` — bump เป็น `0.23.0`
 
-- **`app/api/github/[owner]/[repo]/settings/route.ts`** (ใหม่) — GET/PATCH repository
-  settings ผ่าน session cookie เดิม ไม่มี token หลุดไป client
+**API routes ใหม่** (`app/api/github/[owner]/[repo]/code/`)
+- `file/route.ts` — อ่านเนื้อหาไฟล์ + sha
+- `commit/route.ts` — commit endpoint เดียวรองรับทั้ง save ไฟล์เดียว/หลายไฟล์/new/rename/delete
+  พร้อมเช็ค conflict ก่อน push จริง
+- `search/route.ts` — ค้นหาแบบเร็ว (GitHub Search API)
+- `corpus/route.ts` — stream เนื้อหาไฟล์ทั้งหมดสำหรับค้นหาแบบละเอียด
+- `tree/route.ts` — list path ทั้งหมดของ branch (ใช้ตั้ง tree/fuzzy search/corpus)
 
-- **`app/api/github/[owner]/[repo]/branches/route.ts`** (ใหม่) — list branches สำหรับ
-  default-branch picker และ branch selector ใน Download modal
+**Components ใหม่** (`components/code/`)
+- `RepoFileTree.tsx`, `CodeEditor.tsx`, `CodeSearchPanel.tsx`, `CommitReviewSheet.tsx`,
+  `PathPromptSheet.tsx`, `DeleteFileConfirmSheet.tsx`
 
-- **`app/api/github/[owner]/[repo]/danger/route.ts`** (ใหม่) — archive / rename / delete
-  repository ทุก action ตรวจ confirm ซ้ำฝั่ง server (ไม่พึ่ง client check)
+**Pages ใหม่**
+- `app/tools/github/code/page.tsx` — เลือก repo
+- `app/tools/github/code/[owner]/[repo]/page.tsx` — หน้าเครื่องมือหลัก (ไฟล์/แก้ไข/ค้นหา)
 
-- **`app/api/github/[owner]/[repo]/download/route.ts`** (ใหม่) — stream progress แบบ
-  NDJSON เหมือน `/api/push`, ดึงไฟล์ทีละไฟล์จาก tree, zip ด้วย `adm-zip` (dependency เดิม
-  ที่ `lib/zip.ts` ใช้อยู่แล้ว), อัป blob ชั่วคราวผ่าน `@vercel/blob` แล้วให้ client ดาวน์โหลด
-  แล้วลบ blob ทิ้งผ่าน `/api/upload/blob-cleanup` เดิม มี cap ทั้งจำนวนไฟล์และขนาดรวม
-  กัน browser/function ค้าง
+**แก้ไข**
+- `app/tools/github/page.tsx` — เพิ่มการ์ด "GitHub Code" การ์ดที่ 4
+- `package.json` — เพิ่ม dependency ชุด CodeMirror 6
 
-- **`components/DownloadProjectModal.tsx`** (ใหม่) — bottom sheet สไตล์เดียวกับ
-  `ConfirmMoveDialog.tsx` มี source/contents/options ตามสเปก, progress bar,
-  และ checkbox "Include Git metadata" แบบ disabled พร้อมข้อความ "ยังไม่รองรับ"
-  แทนการทำ fake control
+## ยังไม่รวมในรอบนี้ / ข้อจำกัดที่รู้อยู่แล้ว
 
-- **`app/tools/github/settings/[owner]/[repo]/page.tsx`** (ใหม่) — Settings index
-  แบบ navigation card ตามสเปก (ไม่ยัดฟอร์มทุกอย่างรวมหน้าเดียว)
-
-- **`app/tools/github/settings/[owner]/[repo]/repository/page.tsx`** (ใหม่) —
-  Repository Settings มี dirty-state bar "Unsaved changes / Discard / Save changes"
-  ไม่ยิง API ทุกครั้งที่พิมพ์
-
-- **`app/tools/github/settings/[owner]/[repo]/danger/page.tsx`** (ใหม่) — Danger Zone,
-  delete ต้องพิมพ์ชื่อ repo ให้ตรงก่อนกดได้
-
-- **`app/tools/github/page.tsx`** — เพิ่มการ์ดที่สาม "GitHub Settings" ต่อจาก New/Update
-  repository ตามที่ควรจะเป็น (รอบแรกที่ส่งไปลืมเพิ่ม entry point นี้ — ฝังไว้แค่ในหน้า
-  Update ตอนเลือก repo แล้ว ทำให้หาไม่เจอ แก้แล้วในรอบนี้)
-
-- **`app/tools/github/settings/page.tsx`** (ใหม่) — หน้าเลือก repo สำหรับเข้าสู่ GitHub
-  Settings โดยตรง (ปลายทางของการ์ดใหม่ด้านบน) ก่อนเข้าหน้า Settings index ของ repo นั้น
-
-- **`app/tools/github/settings/[owner]/[repo]/page.tsx`** — เพิ่มปุ่ม "Download Project"
-  ไว้บนสุดของหน้า Settings index ด้วย (ไม่ต้องผ่าน Update flow ก็ดาวน์โหลดได้)
-
-- **`app/tools/github/update/page.tsx`** — เอาลิงก์ "Settings"/ปุ่ม "Download Project" ที่เคย
-  ฝังไว้ใน header ของ state เลือก repo แล้วออก (ตามที่ขอ) เหลือแค่ "change repo" เหมือนเดิม —
-  ตอนนี้ GitHub Settings และ Download Project เข้าถึงได้จากการ์ดเครื่องมือเฉพาะใน
-  `app/tools/github/page.tsx` เท่านั้น ไม่ผูกกับ flow Update อีกต่อไป
-
-- **`lib/i18n.ts`** — เพิ่มคีย์ TH/EN ทั้งหมดสำหรับ UI ใหม่ (GitHub Settings, Danger Zone,
-  Download Project)
-
-- **`lib/version.ts`** — bump เป็น `0.22.0` พร้อม changelog entry
-
-## ยังไม่รวมในรอบนี้
-
-Branch protection (แก้ไข), Actions, Variables/Secrets, Collaborators/Access — ต้องมี API
-abstraction ใหม่ทั้งหมด ยังไม่มีอะไรให้ reuse ในรอบนี้ ถ้าต้องการต่อ ทำเป็นรอบถัดไปได้เลย
+- ตรวจ error เป็น syntax-level เท่านั้น ไม่ใช่ semantic/type-check เต็มรูปแบบ (ต้องรัน
+  TypeScript compiler ในเบราว์เซอร์ ของหนักขึ้นเยอะ)
+- ค้นหาแบบละเอียดมี cap ขนาด/จำนวนไฟล์เหมือน Download Project (รีโปใหญ่มากจะได้ผลบางส่วน
+  พร้อมแจ้งเตือนชัดเจน)
+- ยังไม่ทดสอบกับ `npm install` จริง (ไม่มี network ในสภาพแวดล้อมนี้) — ตรวจแค่ syntax/type
+  แบบแยกไฟล์ผ่าน `tsc --noEmit` แล้ว ไม่พบปัญหา แต่แนะนำให้รัน `next build` เต็มรูปแบบอีกที
+  ก่อน deploy จริง

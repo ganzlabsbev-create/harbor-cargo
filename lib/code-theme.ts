@@ -1,0 +1,73 @@
+import { EditorView } from "@codemirror/view";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags as t } from "@lezer/highlight";
+
+/**
+ * A CodeMirror theme built from Harbor Cargo's existing Tailwind tokens
+ * (tailwind.config.ts) instead of pulling in a prepackaged CodeMirror
+ * theme — so the editor actually looks like the rest of the app rather
+ * than a bolted-on widget.
+ */
+const colors = {
+  bg: "#0A1930", // base.surface
+  bgActiveLine: "#101F3B", // base.surface2
+  border: "#1C2E4D", // base.border
+  ink: "#F5F7FA",
+  inkDim: "#B7C2D6",
+  inkFaint: "#7C8AA5",
+  orange: "#FA6522", // harbor.orange
+  blue: "#4C9AFF", // brightened harbor.blue for AA contrast on dark bg
+  green: "#4ADE80", // accent.green, brightened for text use
+  red: "#F87171", // accent.red, brightened for text use
+  purple: "#C084FC",
+  gutterBg: "#071429",
+};
+
+export const harborEditorTheme = EditorView.theme(
+  {
+    "&": { color: colors.ink, backgroundColor: colors.bg, height: "100%", fontSize: "13px" },
+    ".cm-content": { caretColor: colors.orange, fontFamily: "var(--font-mono, ui-monospace, monospace)", padding: "10px 0" },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: colors.orange },
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
+      backgroundColor: "rgba(250,101,34,0.28)",
+    },
+    ".cm-panels": { backgroundColor: colors.gutterBg, color: colors.ink },
+    ".cm-panels.cm-panels-top": { borderBottom: `1px solid ${colors.border}` },
+    ".cm-searchMatch": { backgroundColor: "rgba(76,154,255,0.25)", outline: `1px solid ${colors.blue}` },
+    ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "rgba(250,101,34,0.35)" },
+    ".cm-activeLine": { backgroundColor: colors.bgActiveLine },
+    ".cm-activeLineGutter": { backgroundColor: colors.bgActiveLine, color: colors.ink },
+    ".cm-gutters": { backgroundColor: colors.gutterBg, color: colors.inkFaint, border: "none", borderRight: `1px solid ${colors.border}` },
+    ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 12px" },
+    ".cm-foldPlaceholder": { backgroundColor: colors.bgActiveLine, border: `1px solid ${colors.border}`, color: colors.inkDim },
+    ".cm-tooltip": { backgroundColor: colors.gutterBg, border: `1px solid ${colors.border}`, color: colors.ink },
+    ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "rgba(250,101,34,0.2)", color: colors.ink },
+    ".cm-diagnostic-error": { borderLeft: `3px solid ${colors.red}` },
+    ".cm-lintRange-error": { backgroundImage: `linear-gradient(to right, ${colors.red} 60%, transparent 0%)`, backgroundPosition: "bottom", backgroundRepeat: "repeat-x", backgroundSize: "4px 2px" },
+    ".cm-matchingBracket": { backgroundColor: "rgba(76,154,255,0.25)", outline: `1px solid ${colors.blue}` },
+  },
+  { dark: true }
+);
+
+export const harborHighlightStyle = HighlightStyle.define([
+  { tag: t.keyword, color: colors.blue },
+  { tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName], color: colors.ink },
+  { tag: [t.function(t.variableName), t.labelName], color: colors.orange },
+  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: colors.purple },
+  { tag: [t.definition(t.name), t.separator], color: colors.ink },
+  { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: colors.purple },
+  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)], color: colors.blue },
+  { tag: [t.meta, t.comment], color: colors.inkFaint, fontStyle: "italic" },
+  { tag: t.strong, fontWeight: "bold" },
+  { tag: t.emphasis, fontStyle: "italic" },
+  { tag: t.strikethrough, textDecoration: "line-through" },
+  { tag: t.link, color: colors.blue, textDecoration: "underline" },
+  { tag: t.heading, fontWeight: "bold", color: colors.orange },
+  { tag: [t.atom, t.bool, t.special(t.variableName)], color: colors.orange },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: colors.green },
+  { tag: t.invalid, color: colors.red },
+]);
+
+export function harborCodeMirrorTheme() {
+  return [harborEditorTheme, syntaxHighlighting(harborHighlightStyle)];
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FolderPlus, RefreshCcw, ChevronLeft, ChevronRight, Settings2 } from "lucide-react";
+import { FolderPlus, RefreshCcw, ChevronLeft, ChevronRight, Settings2, FileCode2 } from "lucide-react";
 import Header from "@/components/Header";
 import { useLang } from "@/lib/i18n-context";
 
@@ -41,6 +41,20 @@ export default function GithubToolChooser() {
             <div className="min-w-0 flex-1">
               <p className="font-display text-base font-semibold text-ink">{t("github_choose_update")}</p>
               <p className="text-sm text-ink-dim">{t("github_choose_update_desc")}</p>
+            </div>
+            <ChevronRight size={18} className="text-ink-faint" />
+          </Link>
+
+          <Link
+            href="/tools/github/code"
+            className="group flex items-center gap-4 rounded-2xl border border-base-border bg-base-surface p-4 shadow-card active:scale-[0.99]"
+          >
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-harbor-orange to-harbor-blue text-white shadow-card">
+              <FileCode2 size={22} strokeWidth={1.75} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-display text-base font-semibold text-ink">{t("tool_github_code_title")}</p>
+              <p className="text-sm text-ink-dim">{t("tool_github_code_desc")}</p>
             </div>
             <ChevronRight size={18} className="text-ink-faint" />
           </Link>

@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.22.0";
+export const APP_VERSION = "0.23.0";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.23.0",
+    date: "2026-08",
+    notes: [
+      "New: GitHub Code — a real in-browser code editor for a repo, its own tool on the GitHub chooser (next to New/Update/Settings). Real syntax highlighting and lint-gutter error checking (CodeMirror 6) for JS/TS/JSX/TSX, JSON, CSS, HTML, Markdown, and Python.",
+      "GitHub Code: a real collapsible file tree, plus a fuzzy 'folder/folder/file' path search that narrows the list live as you type.",
+      "GitHub Code: full-text code search — Quick mode (GitHub's own code search index) and Deep mode (fetches every text file once, then searches entirely offline/instantly — works on any branch, not just default).",
+      "GitHub Code: new file, rename/move, and delete, plus a review-before-commit screen with a real line diff for every pending change, and a conflict check that refuses to overwrite a file someone else changed on GitHub in the meantime.",
+      "GitHub Code: unsaved edits are kept as a local draft so an accidental reload or navigation doesn't lose your work.",
+      "Renamed the 'GitHub Uploader' tool card to just 'GitHub' on the home screen, matching Harbor and Vercel's naming, since it now covers push/update/settings/code — not just uploading.",
+    ],
+  },
   {
     version: "0.22.0",
     date: "2026-08",
