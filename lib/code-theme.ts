@@ -42,8 +42,17 @@ export const harborEditorTheme = EditorView.theme(
     ".cm-foldPlaceholder": { backgroundColor: colors.bgActiveLine, border: `1px solid ${colors.border}`, color: colors.inkDim },
     ".cm-tooltip": { backgroundColor: colors.gutterBg, border: `1px solid ${colors.border}`, color: colors.ink },
     ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "rgba(250,101,34,0.2)", color: colors.ink },
-    ".cm-diagnostic-error": { borderLeft: `3px solid ${colors.red}` },
-    ".cm-lintRange-error": { backgroundImage: `linear-gradient(to right, ${colors.red} 60%, transparent 0%)`, backgroundPosition: "bottom", backgroundRepeat: "repeat-x", backgroundSize: "4px 2px" },
+    ".cm-diagnostic-error": { borderLeft: `3px solid ${colors.red}`, backgroundColor: "rgba(248,113,113,0.08)" },
+    // A real red squiggly (SVG zigzag), not just a faint dashed line —
+    // needs to be genuinely visible at a glance, not something you have to
+    // already know is there to notice.
+    ".cm-lintRange-error": {
+      backgroundImage:
+        "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='6' height='3'><path d='M0 2.5 l1.5 -2 l1.5 2 l1.5 -2 l1.5 2' stroke='%23F87171' fill='none' stroke-width='1'/></svg>\")",
+      backgroundRepeat: "repeat-x",
+      backgroundPosition: "0 bottom",
+      paddingBottom: "1px",
+    },
     ".cm-matchingBracket": { backgroundColor: "rgba(76,154,255,0.25)", outline: `1px solid ${colors.blue}` },
   },
   { dark: true }

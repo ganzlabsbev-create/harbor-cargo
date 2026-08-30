@@ -22,8 +22,9 @@ import CodeSearchPanel from "@/components/code/CodeSearchPanel";
 import CommitReviewSheet from "@/components/code/CommitReviewSheet";
 import PathPromptSheet from "@/components/code/PathPromptSheet";
 import DeleteFileConfirmSheet from "@/components/code/DeleteFileConfirmSheet";
+import ProblemsSheet from "@/components/code/ProblemsSheet";
 import { useLang } from "@/lib/i18n-context";
-import { languageForPath } from "@/lib/code-lang";
+import { languageForPath, CodeDiagnostic } from "@/lib/code-lang";
 import { saveDraft, loadDraft, clearDraft } from "@/lib/code-draft-store";
 import { PendingChange, pendingChangeKey, toCommitPayload } from "@/lib/code-changes";
 
@@ -66,7 +67,9 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
   const [pendingChanges, setPendingChanges] = useState<Map<string, PendingChange>>(new Map());
   const [openingPath, setOpeningPath] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
-  const [cursorInfo, setCursorInfo] = useState<{ line: number; col: number; errorCount: number } | null>(null);
+  const [cursorInfo, setCursorInfo] = useState<{ line: number; col: number } | null>(null);
+  const [diagnostics, setDiagnostics] = useState<CodeDiagnostic[]>([]);
+  const [showProblems, setShowProblems] = useState(false);
   const [pendingJumpLine, setPendingJumpLine] = useState<number | null>(null);
 
   const [reviewSet, setReviewSet] = useState<PendingChange[] | null>(null); // null = closed
@@ -207,6 +210,11 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
       return () => clearTimeout(id);
     }
   }, [pendingJumpLine, activeTab]);
+
+  useEffect(() => {
+    setDiagnostics([]);
+    setCursorInfo(null);
+  }, [activeTab]);
 
   function closeTab(path: string) {
     setOpenTabs((tabs) => {
@@ -520,18 +528,19 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
                             value={activeEntry.content}
                             onChange={(next) => handleChange(activeTab, next)}
                             onCursor={setCursorInfo}
+                            onDiagnostics={setDiagnostics}
                           />
                         ) : null}
                       </div>
 
                       {activeTab && (
                         <div className="flex shrink-0 items-center justify-between gap-2 border-t border-base-border bg-base-surface2 px-3 py-1.5 text-[11px] text-ink-faint">
-                          <span>
+                          <span className="flex items-center">
                             {activeLang?.label} · Ln {cursorInfo?.line ?? 1}, Col {cursorInfo?.col ?? 1}
-                            {cursorInfo && cursorInfo.errorCount > 0 && (
-                              <span className="ml-2 text-accent-red">
-                                {cursorInfo.errorCount} {t("code_errors_word")}
-                              </span>
+                            {diagnostics.length > 0 && (
+                              <button onClick={() => setShowProblems(true)} className="ml-2 flex items-center gap-1 text-accent-red underline decoration-dotted">
+                                {diagnostics.length} {t("code_errors_word")}
+                              </button>
                             )}
                           </span>
                           <button
@@ -565,6 +574,15 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
           existingPaths={new Set(displayPaths)}
           onClose={() => setPathPrompt(null)}
           onSubmit={(p) => (pathPrompt.mode === "new" ? submitNewFile(p) : submitRename(pathPrompt.initialPath, p))}
+        />
+      )}
+
+      {showProblems && activeTab && (
+        <ProblemsSheet
+          fileName={activeTab}
+          diagnostics={diagnostics}
+          onClose={() => setShowProblems(false)}
+          onJump={(line) => editorRef.current?.scrollToLine(line)}
         />
       )}
 

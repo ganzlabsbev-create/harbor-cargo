@@ -4,7 +4,7 @@
  * to CHANGELOG below. This is independent from NEXT_PUBLIC_BUILD_ID (which
  * is just a per-deploy fingerprint used to detect stale client bundles).
  */
-export const APP_VERSION = "0.23.0";
+export const APP_VERSION = "0.23.1";
 
 export interface ChangelogEntry {
   version: string;
@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.23.1",
+    date: "2026-08",
+    notes: [
+      "Fixed: GitHub Code and GitHub Settings' repo pickers always failed with a bare 'failed' error — they expected /api/repos to return a plain array, but it actually returns { ok, repos }, same shape the Update-repo picker already handled correctly. Both pickers now match that.",
+      "Fixed: GitHub Code was flagging exactly one syntax error on every single file, even valid ones. Cause: for any file type without a real language attached (most non-JS/JSON/CSS/HTML/MD/Python files), CodeMirror's syntaxTree() returns Lezer's shared empty-tree placeholder — and Lezer's own NodeType.isError happens to be defined as 'id === 0', which that placeholder's node also satisfies. The checker now explicitly skips it, so only real parse errors are reported.",
+      "New: a 'Problems' panel for GitHub Code — tapping the error count in the editor's status bar now opens a full list of every syntax issue in the current file, each with its exact line/column and a message showing what text triggered it, and tapping one jumps straight to that line.",
+      "GitHub Code: syntax error underlines in the editor are now a real red squiggly line instead of a faint dashed pattern, so they're visible without already knowing to look for them.",
+    ],
+  },
   {
     version: "0.23.0",
     date: "2026-08",

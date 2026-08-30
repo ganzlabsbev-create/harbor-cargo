@@ -505,6 +505,9 @@ export const dict = {
     code_search_deep_truncated: "รีโปนี้ใหญ่เกินไป ผลลัพธ์มาจากการดึงข้อมูลบางส่วนเท่านั้น",
     code_search_empty_hint: "พิมพ์เพื่อค้นหาข้อความในทุกไฟล์ของ repository",
     code_searching: "กำลังค้นหา...",
+    code_problems_title: "รายการปัญหาในไฟล์",
+    code_problems_none: "ไม่พบปัญหาในไฟล์นี้",
+    code_problems_line_col_prefix: "บรรทัด",
   },
   en: {
     appName: "HARBOR CARGO",
@@ -1009,6 +1012,9 @@ export const dict = {
     code_search_deep_truncated: "This repo is too large — results are from a partial fetch only.",
     code_search_empty_hint: "Type to search content across every file in the repository",
     code_searching: "Searching...",
+    code_problems_title: "Problems in this file",
+    code_problems_none: "No problems found in this file",
+    code_problems_line_col_prefix: "Line",
   },
 } as const;
 

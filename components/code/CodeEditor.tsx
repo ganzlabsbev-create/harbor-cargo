@@ -4,11 +4,11 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorState, Extension, Compartment } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { bracketMatching, indentOnInput, foldGutter, syntaxTree } from "@codemirror/language";
+import { bracketMatching, indentOnInput, foldGutter } from "@codemirror/language";
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { lintGutter } from "@codemirror/lint";
-import { languageForPath } from "@/lib/code-lang";
+import { languageForPath, collectSyntaxDiagnostics, CodeDiagnostic } from "@/lib/code-lang";
 import { harborCodeMirrorTheme } from "@/lib/code-theme";
 
 /**
@@ -25,16 +25,19 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
   path: string;
   value: string;
   onChange: (next: string) => void;
-  onCursor?: (info: { line: number; col: number; errorCount: number }) => void;
+  onCursor?: (info: { line: number; col: number }) => void;
+  onDiagnostics?: (diagnostics: CodeDiagnostic[]) => void;
   readOnly?: boolean;
-}>(function CodeEditor({ path, value, onChange, onCursor, readOnly = false }, forwardedRef) {
+}>(function CodeEditor({ path, value, onChange, onCursor, onDiagnostics, readOnly = false }, forwardedRef) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const languageCompartment = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   const onCursorRef = useRef(onCursor);
+  const onDiagnosticsRef = useRef(onDiagnostics);
   onChangeRef.current = onChange;
   onCursorRef.current = onCursor;
+  onDiagnosticsRef.current = onDiagnostics;
 
   // Mount once per file path — CodeMirror manages its own document/undo
   // history internally, so a full remount on path change is the simplest
@@ -47,13 +50,11 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
       if (!onCursorRef.current) return;
       const pos = view.state.selection.main.head;
       const line = view.state.doc.lineAt(pos);
-      const tree = syntaxTree(view.state);
-      let errorCount = 0;
-      const cursor = tree.cursor();
-      do {
-        if (cursor.type.isError) errorCount++;
-      } while (cursor.next());
-      onCursorRef.current({ line: line.number, col: pos - line.from + 1, errorCount });
+      onCursorRef.current({ line: line.number, col: pos - line.from + 1 });
+    }
+
+    function reportDiagnostics(view: EditorView) {
+      onDiagnosticsRef.current?.(collectSyntaxDiagnostics(view.state));
     }
 
     const state = EditorState.create({
@@ -79,7 +80,8 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
         EditorView.editable.of(!readOnly),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChangeRef.current(update.state.doc.toString());
-          if (update.docChanged || update.selectionSet) reportCursor(update.view);
+          if (update.selectionSet) reportCursor(update.view);
+          if (update.docChanged) reportDiagnostics(update.view);
         }),
       ],
     });
@@ -87,6 +89,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
     reportCursor(view);
+    reportDiagnostics(view);
 
     return () => {
       view.destroy();
