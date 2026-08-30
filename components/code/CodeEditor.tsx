@@ -3,10 +3,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorState, Extension, Compartment } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo, undoDepth, redoDepth } from "@codemirror/commands";
 import { bracketMatching, indentOnInput, foldGutter } from "@codemirror/language";
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from "@codemirror/autocomplete";
-import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import { search, searchKeymap, highlightSelectionMatches, openSearchPanel, closeSearchPanel, searchPanelOpen } from "@codemirror/search";
 import { lintGutter } from "@codemirror/lint";
 import { languageForPath, collectSyntaxDiagnostics, CodeDiagnostic } from "@/lib/code-lang";
 import { harborCodeMirrorTheme } from "@/lib/code-theme";
@@ -19,6 +19,10 @@ import { harborCodeMirrorTheme } from "@/lib/code-theme";
  */
 export interface CodeEditorHandle {
   scrollToLine: (line: number) => void;
+  undo: () => void;
+  redo: () => void;
+  /** Opens/closes CodeMirror's own find panel — scoped to *this* file only (project-wide search lives in the Search tab). */
+  toggleSearch: () => void;
 }
 
 const CodeEditor = forwardRef<CodeEditorHandle, {
@@ -27,17 +31,20 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
   onChange: (next: string) => void;
   onCursor?: (info: { line: number; col: number }) => void;
   onDiagnostics?: (diagnostics: CodeDiagnostic[]) => void;
+  onHistoryChange?: (info: { canUndo: boolean; canRedo: boolean }) => void;
   readOnly?: boolean;
-}>(function CodeEditor({ path, value, onChange, onCursor, onDiagnostics, readOnly = false }, forwardedRef) {
+}>(function CodeEditor({ path, value, onChange, onCursor, onDiagnostics, onHistoryChange, readOnly = false }, forwardedRef) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const languageCompartment = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   const onCursorRef = useRef(onCursor);
   const onDiagnosticsRef = useRef(onDiagnostics);
+  const onHistoryChangeRef = useRef(onHistoryChange);
   onChangeRef.current = onChange;
   onCursorRef.current = onCursor;
   onDiagnosticsRef.current = onDiagnostics;
+  onHistoryChangeRef.current = onHistoryChange;
 
   // Mount once per file path — CodeMirror manages its own document/undo
   // history internally, so a full remount on path change is the simplest
@@ -55,6 +62,10 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
 
     function reportDiagnostics(view: EditorView) {
       onDiagnosticsRef.current?.(collectSyntaxDiagnostics(view.state));
+    }
+
+    function reportHistory(view: EditorView) {
+      onHistoryChangeRef.current?.({ canUndo: undoDepth(view.state) > 0, canRedo: redoDepth(view.state) > 0 });
     }
 
     const state = EditorState.create({
@@ -76,12 +87,15 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
         languageCompartment.current.of(lang.extension()),
         harborCodeMirrorTheme(),
         keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...completionKeymap, ...searchKeymap, indentWithTab]),
-        EditorView.lineWrapping,
+        // No EditorView.lineWrapping — long lines scroll horizontally instead
+        // of wrapping, matching a regular code editor. The host div below
+        // already has overflow-auto on both axes.
         EditorView.editable.of(!readOnly),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChangeRef.current(update.state.doc.toString());
           if (update.selectionSet) reportCursor(update.view);
           if (update.docChanged) reportDiagnostics(update.view);
+          if (update.docChanged) reportHistory(update.view);
         }),
       ],
     });
@@ -90,6 +104,7 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
     viewRef.current = view;
     reportCursor(view);
     reportDiagnostics(view);
+    reportHistory(view);
 
     return () => {
       view.destroy();
@@ -123,6 +138,24 @@ const CodeEditor = forwardRef<CodeEditorHandle, {
         effects: EditorView.scrollIntoView(lineInfo.from, { y: "center" }),
       });
       view.focus();
+    },
+    undo: () => {
+      const view = viewRef.current;
+      if (!view) return;
+      undo(view);
+      view.focus();
+    },
+    redo: () => {
+      const view = viewRef.current;
+      if (!view) return;
+      redo(view);
+      view.focus();
+    },
+    toggleSearch: () => {
+      const view = viewRef.current;
+      if (!view) return;
+      if (searchPanelOpen(view.state)) closeSearchPanel(view);
+      else openSearchPanel(view);
     },
   }));
 

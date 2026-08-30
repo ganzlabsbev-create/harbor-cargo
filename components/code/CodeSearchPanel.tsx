@@ -171,7 +171,7 @@ export default function CodeSearchPanel({
       <div className="mb-3 flex shrink-0 gap-2">
         <button
           onClick={() => setMode("quick")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition active:shadow-glow-orange ${
             mode === "quick" ? "border-harbor-orange bg-harbor-orange/10 text-harbor-orange" : "border-base-border text-ink-dim"
           }`}
         >
@@ -179,7 +179,7 @@ export default function CodeSearchPanel({
         </button>
         <button
           onClick={() => setMode("deep")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition active:shadow-glow-orange ${
             mode === "deep" ? "border-harbor-orange bg-harbor-orange/10 text-harbor-orange" : "border-base-border text-ink-dim"
           }`}
         >
@@ -220,7 +220,7 @@ export default function CodeSearchPanel({
               <button
                 key={r.path}
                 onClick={() => openQuickResult(r.path)}
-                className="mb-2 flex w-full flex-col gap-1 rounded-xl border border-base-border bg-base-surface p-3 text-left"
+                className="mb-2 flex w-full flex-col gap-1 rounded-xl border border-base-border bg-base-surface p-3 text-left transition active:shadow-glow-orange"
               >
                 <span className="flex items-center gap-1.5 truncate font-mono text-xs text-ink">
                   <FileIcon size={12} className="shrink-0 text-ink-faint" /> {r.path}
@@ -247,7 +247,7 @@ export default function CodeSearchPanel({
                 <button
                   key={l.lineNo}
                   onClick={() => onOpenAtLine(m.path, l.lineNo)}
-                  className="mb-0.5 flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left active:bg-base-surface2"
+                  className="mb-0.5 flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left transition active:bg-base-surface2 active:shadow-glow-orange"
                 >
                   <span className="shrink-0 font-mono text-[11px] text-ink-faint">{l.lineNo}</span>
                   <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-dim">{l.text}</span>

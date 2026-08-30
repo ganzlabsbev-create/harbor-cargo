@@ -25,14 +25,40 @@ const colors = {
 
 export const harborEditorTheme = EditorView.theme(
   {
-    "&": { color: colors.ink, backgroundColor: colors.bg, height: "100%", fontSize: "13px" },
+    "&": { color: colors.ink, backgroundColor: colors.bg, height: "100%", fontSize: "15px" },
     ".cm-content": { caretColor: colors.orange, fontFamily: "var(--font-mono, ui-monospace, monospace)", padding: "10px 0" },
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: colors.orange },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
       backgroundColor: "rgba(250,101,34,0.28)",
     },
     ".cm-panels": { backgroundColor: colors.gutterBg, color: colors.ink },
-    ".cm-panels.cm-panels-top": { borderBottom: `1px solid ${colors.border}` },
+    // The in-file find panel (opened via the toolbar search icon) sits as a
+    // floating overlay pinned to the top of the editor pane instead of
+    // pushing content down, so it reads as a dropdown rather than a
+    // permanent extra row.
+    ".cm-panels.cm-panels-top": {
+      position: "sticky",
+      top: "0",
+      zIndex: "20",
+      borderBottom: `1px solid ${colors.border}`,
+      boxShadow: "0 8px 16px -8px rgba(0,0,0,0.55)",
+    },
+    ".cm-search": { display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px", padding: "8px" },
+    ".cm-search input.cm-textfield": {
+      backgroundColor: colors.bg,
+      border: `1px solid ${colors.border}`,
+      borderRadius: "8px",
+      color: colors.ink,
+      padding: "5px 8px",
+    },
+    ".cm-search button.cm-button": {
+      backgroundColor: colors.bgActiveLine,
+      border: `1px solid ${colors.border}`,
+      borderRadius: "8px",
+      color: colors.inkDim,
+      padding: "4px 8px",
+    },
+    ".cm-search label": { color: colors.inkFaint, fontSize: "12px" },
     ".cm-searchMatch": { backgroundColor: "rgba(76,154,255,0.25)", outline: `1px solid ${colors.blue}` },
     ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "rgba(250,101,34,0.35)" },
     ".cm-activeLine": { backgroundColor: colors.bgActiveLine },

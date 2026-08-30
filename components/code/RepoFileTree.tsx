@@ -60,7 +60,7 @@ export default function RepoFileTree({
 
   function rowClass(path: string, isDir: boolean) {
     const isActive = !isDir && path === activePath;
-    return `flex min-h-[46px] w-full items-center gap-2 rounded-lg px-2 text-left transition active:bg-base-surface2 ${
+    return `flex min-h-[46px] w-full items-center gap-2 rounded-lg px-2 text-left transition active:bg-base-surface2 active:shadow-glow-orange ${
       isActive ? "bg-harbor-orange/10" : ""
     }`;
   }
@@ -84,7 +84,7 @@ export default function RepoFileTree({
             e.stopPropagation();
             setMenuPath(menuPath === path ? null : path);
           }}
-          className="flex h-[46px] w-9 shrink-0 items-center justify-center text-ink-faint"
+          className="flex h-[46px] w-9 shrink-0 items-center justify-center text-ink-faint transition active:shadow-glow-orange"
           aria-label={t("code_file_actions")}
         >
           <MoreVertical size={15} />
@@ -96,7 +96,7 @@ export default function RepoFileTree({
                 setMenuPath(null);
                 onRename(path);
               }}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-ink-dim"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-ink-dim transition active:shadow-glow-orange"
             >
               <PencilLine size={14} /> {t("code_rename")}
             </button>
@@ -105,7 +105,7 @@ export default function RepoFileTree({
                 setMenuPath(null);
                 onDelete(path);
               }}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-accent-red"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-accent-red transition active:shadow-glow-orange"
             >
               <Trash2 size={14} /> {t("code_delete")}
             </button>
@@ -128,7 +128,7 @@ export default function RepoFileTree({
             e.stopPropagation();
             onNewFile(fullPath);
           }}
-          className="flex h-[46px] w-9 shrink-0 items-center justify-center text-ink-faint"
+          className="flex h-[46px] w-9 shrink-0 items-center justify-center text-ink-faint transition active:shadow-glow-orange"
           aria-label={t("code_new_file")}
         >
           <FilePlus size={15} />

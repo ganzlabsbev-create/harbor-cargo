@@ -13,6 +13,10 @@ import {
   FolderTree,
   FileCode2,
   Search as SearchIcon,
+  Undo2,
+  Redo2,
+  RotateCcw,
+  FolderX,
 } from "lucide-react";
 import Header from "@/components/Header";
 import AuthGate from "@/components/AuthGate";
@@ -22,6 +26,7 @@ import CodeSearchPanel from "@/components/code/CodeSearchPanel";
 import CommitReviewSheet from "@/components/code/CommitReviewSheet";
 import PathPromptSheet from "@/components/code/PathPromptSheet";
 import DeleteFileConfirmSheet from "@/components/code/DeleteFileConfirmSheet";
+import RevertConfirmSheet from "@/components/code/RevertConfirmSheet";
 import ProblemsSheet from "@/components/code/ProblemsSheet";
 import { useLang } from "@/lib/i18n-context";
 import { languageForPath, CodeDiagnostic } from "@/lib/code-lang";
@@ -71,10 +76,13 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
   const [diagnostics, setDiagnostics] = useState<CodeDiagnostic[]>([]);
   const [showProblems, setShowProblems] = useState(false);
   const [pendingJumpLine, setPendingJumpLine] = useState<number | null>(null);
+  const [historyInfo, setHistoryInfo] = useState<{ canUndo: boolean; canRedo: boolean }>({ canUndo: false, canRedo: false });
+  const [pendingOpenSearch, setPendingOpenSearch] = useState(false);
 
   const [reviewSet, setReviewSet] = useState<PendingChange[] | null>(null); // null = closed
   const [pathPrompt, setPathPrompt] = useState<{ mode: "new" | "rename"; initialPath: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [revertTarget, setRevertTarget] = useState<{ scope: "file"; path: string } | { scope: "project" } | null>(null);
 
   const editorRef = useRef<CodeEditorHandle | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -214,7 +222,32 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
   useEffect(() => {
     setDiagnostics([]);
     setCursorInfo(null);
+    setHistoryInfo({ canUndo: false, canRedo: false });
   }, [activeTab]);
+
+  // The floating search icon can be tapped from any section — if we're not
+  // already on the editor, switch there first and open CodeMirror's find
+  // panel once it has a tick to mount for the (possibly new) active tab.
+  useEffect(() => {
+    if (!pendingOpenSearch) return;
+    if (section === "editor" && activeTab) {
+      const id = setTimeout(() => {
+        editorRef.current?.toggleSearch();
+        setPendingOpenSearch(false);
+      }, 60);
+      return () => clearTimeout(id);
+    }
+  }, [pendingOpenSearch, section, activeTab]);
+
+  function openFileSearch() {
+    if (!activeTab) return;
+    if (section !== "editor") {
+      setSection("editor");
+      setPendingOpenSearch(true);
+    } else {
+      editorRef.current?.toggleSearch();
+    }
+  }
 
   function closeTab(path: string) {
     setOpenTabs((tabs) => {
@@ -331,6 +364,86 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
     clearDraft(owner, repo, branch!, path);
   }
 
+  // --- revert (discard unsaved work) -------------------------------------------
+  // Reverts just the one open file. A brand-new file or an in-progress
+  // rename has no "original" to go back to, so reverting those means
+  // undoing the creation/rename itself rather than clearing content.
+  function revertFile(path: string) {
+    const pending = pendingChanges.get(path);
+    if (!pending) {
+      setRevertTarget(null);
+      return;
+    }
+
+    if (pending.kind === "edit") {
+      setFileState((prev) => {
+        const next = new Map(prev);
+        const entry = next.get(path);
+        if (entry) next.set(path, { ...entry, content: entry.originalContent });
+        return next;
+      });
+      setPendingChanges((prev) => {
+        const next = new Map(prev);
+        next.delete(path);
+        return next;
+      });
+    } else {
+      // "add" or "rename" — nothing on GitHub to revert to, so undo the
+      // local change entirely and close the tab.
+      setPendingChanges((prev) => {
+        const next = new Map(prev);
+        next.delete(path);
+        return next;
+      });
+      setFileState((prev) => {
+        const next = new Map(prev);
+        next.delete(path);
+        return next;
+      });
+      closeTab(path);
+    }
+
+    if (branch) clearDraft(owner, repo, branch, path);
+    setRevertTarget(null);
+  }
+
+  // Reverts every pending change across the whole project in one shot.
+  function revertProject() {
+    const toClose = new Set<string>();
+    const toResetToOriginal = new Set<string>();
+    for (const c of pendingChanges.values()) {
+      if (c.kind === "edit") toResetToOriginal.add(c.path);
+      else if (c.kind === "add") toClose.add(c.path);
+      else if (c.kind === "rename") toClose.add(c.toPath);
+      // "delete" changes have no open tab/fileState left to clean up.
+    }
+
+    setFileState((prev) => {
+      const next = new Map(prev);
+      for (const path of toClose) next.delete(path);
+      for (const path of toResetToOriginal) {
+        const entry = next.get(path);
+        if (entry) next.set(path, { ...entry, content: entry.originalContent });
+      }
+      return next;
+    });
+
+    setOpenTabs((tabs) => {
+      const remaining = tabs.filter((p) => !toClose.has(p));
+      setActiveTab((cur) => (cur && toClose.has(cur) ? (remaining.length > 0 ? remaining[remaining.length - 1] : null) : cur));
+      return remaining;
+    });
+
+    if (branch) {
+      for (const c of pendingChanges.values()) {
+        clearDraft(owner, repo, branch, c.kind === "rename" ? c.toPath : c.path);
+      }
+    }
+
+    setPendingChanges(new Map());
+    setRevertTarget(null);
+  }
+
   // --- commit -----------------------------------------------------------------
   async function runCommit(changes: PendingChange[], message: string) {
     const res = await fetch(`/api/github/${owner}/${repo}/code/commit`, {
@@ -391,6 +504,20 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
         </Link>
 
         <AuthGate next={`/tools/github/code/${owner}/${repo}`}>
+          {/* floating in-file search icon — visible on every section tab, jumps to
+              the editor (if needed) and opens CodeMirror's own find panel scoped
+              to whichever file is currently open. Project-wide search stays in
+              the Search tab below. Nudge `top` if this overlaps a taller Header. */}
+          <button
+            onClick={openFileSearch}
+            disabled={!activeTab}
+            aria-label={t("code_search_in_file")}
+            title={t("code_search_in_file")}
+            className="fixed right-4 top-20 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-base-border bg-base-surface text-ink-dim shadow-card transition active:shadow-glow-orange disabled:opacity-40"
+          >
+            <SearchIcon size={18} />
+          </button>
+
           {/* top bar: repo + branch + commit */}
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="min-w-0">
@@ -423,7 +550,7 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
             <button
               onClick={() => setReviewSet(Array.from(pendingChanges.values()))}
               disabled={changeCount === 0}
-              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-harbor-orange px-3 py-2 text-xs font-semibold text-white shadow-glow-orange disabled:opacity-40"
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-harbor-orange px-3 py-2 text-xs font-semibold text-white shadow-glow-orange transition active:shadow-glow-orange disabled:opacity-40"
             >
               <UploadCloud size={14} /> {t("code_commit_badge")} {changeCount > 0 ? `(${changeCount})` : ""}
             </button>
@@ -457,8 +584,12 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
             </div>
           ) : (
             <div className="min-h-0 flex-1">
-              {section === "files" && (
-                <div className="h-[65dvh] rounded-2xl border border-base-border bg-base-surface p-2 shadow-card">
+              {/* All three panes stay mounted and are only hidden via CSS when
+                  their tab isn't active (rather than unmounted) — this is what
+                  keeps in-progress state like a typed search query or an
+                  expanded folder tree from getting wiped just by switching tabs. */}
+              <div className={section === "files" ? "" : "hidden"}>
+                <div className="h-[78dvh] rounded-2xl border border-base-border bg-base-surface p-2 shadow-card">
                   <RepoFileTree
                     paths={displayPaths}
                     activePath={activeTab}
@@ -470,15 +601,15 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
                   />
                   <button
                     onClick={() => setPathPrompt({ mode: "new", initialPath: "" })}
-                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-base-border py-2 text-xs text-ink-dim"
+                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-base-border py-2 text-xs text-ink-dim transition active:shadow-glow-orange"
                   >
                     {t("code_new_file")}
                   </button>
                 </div>
-              )}
+              </div>
 
-              {section === "editor" && (
-                <div className="flex h-[65dvh] flex-col overflow-hidden rounded-2xl border border-base-border bg-base-surface shadow-card">
+              <div className={section === "editor" ? "" : "hidden"}>
+                <div className="flex h-[78dvh] flex-col overflow-hidden rounded-2xl border border-base-border bg-base-surface shadow-card">
                   {openTabs.length === 0 ? (
                     <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-faint">{t("code_no_open_files")}</div>
                   ) : (
@@ -491,7 +622,7 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
                             <button
                               key={p}
                               onClick={() => setActiveTab(p)}
-                              className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs ${
+                              className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition active:shadow-glow-orange ${
                                 activeTab === p ? "border-harbor-orange text-ink" : "border-transparent text-ink-faint"
                               }`}
                             >
@@ -507,6 +638,27 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
                             </button>
                           );
                         })}
+                      </div>
+
+                      <div className="flex shrink-0 items-center justify-between gap-1 border-b border-base-border bg-base-surface2 px-2 py-1">
+                        <div className="flex items-center gap-1">
+                          <ToolbarIconButton icon={Undo2} label={t("code_undo")} disabled={!historyInfo.canUndo} onClick={() => editorRef.current?.undo()} />
+                          <ToolbarIconButton icon={Redo2} label={t("code_redo")} disabled={!historyInfo.canRedo} onClick={() => editorRef.current?.redo()} />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <ToolbarIconButton
+                            icon={RotateCcw}
+                            label={t("code_revert_file")}
+                            disabled={!activePendingSelf}
+                            onClick={() => activeTab && setRevertTarget({ scope: "file", path: activeTab })}
+                          />
+                          <ToolbarIconButton
+                            icon={FolderX}
+                            label={t("code_revert_project")}
+                            disabled={changeCount === 0}
+                            onClick={() => setRevertTarget({ scope: "project" })}
+                          />
+                        </div>
                       </div>
 
                       {openError && (
@@ -529,6 +681,7 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
                             onChange={(next) => handleChange(activeTab, next)}
                             onCursor={setCursorInfo}
                             onDiagnostics={setDiagnostics}
+                            onHistoryChange={setHistoryInfo}
                           />
                         ) : null}
                       </div>
@@ -546,7 +699,7 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
                           <button
                             onClick={() => activePendingSelf && setReviewSet([activePendingSelf])}
                             disabled={!activePendingSelf}
-                            className="flex items-center gap-1 rounded-md bg-harbor-orange/15 px-2 py-1 font-medium text-harbor-orange disabled:opacity-40"
+                            className="flex items-center gap-1 rounded-md bg-harbor-orange/15 px-2 py-1 font-medium text-harbor-orange transition active:shadow-glow-orange disabled:opacity-40"
                           >
                             <Save size={12} /> {t("code_save_file")}
                           </button>
@@ -555,13 +708,13 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
                     </>
                   )}
                 </div>
-              )}
+              </div>
 
-              {section === "search" && branch && (
-                <div className="h-[65dvh] rounded-2xl border border-base-border bg-base-surface p-2 shadow-card">
-                  <CodeSearchPanel owner={owner} repo={repo} branch={branch} onOpenAtLine={(p, line) => openFile(p, line)} />
+              <div className={section === "search" ? "" : "hidden"}>
+                <div className="h-[78dvh] rounded-2xl border border-base-border bg-base-surface p-2 shadow-card">
+                  {branch && <CodeSearchPanel owner={owner} repo={repo} branch={branch} onOpenAtLine={(p, line) => openFile(p, line)} />}
                 </div>
-              )}
+              </div>
             </div>
           )}
         </AuthGate>
@@ -587,6 +740,16 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
       )}
 
       {deleteTarget && <DeleteFileConfirmSheet path={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={confirmDelete} />}
+
+      {revertTarget && (
+        <RevertConfirmSheet
+          scope={revertTarget.scope}
+          fileName={revertTarget.scope === "file" ? revertTarget.path : undefined}
+          fileCount={revertTarget.scope === "project" ? changeCount : undefined}
+          onClose={() => setRevertTarget(null)}
+          onConfirm={() => (revertTarget.scope === "file" ? revertFile(revertTarget.path) : revertProject())}
+        />
+      )}
 
       {reviewSet && (
         <CommitReviewSheet
@@ -616,13 +779,37 @@ function SectionTab({
   return (
     <button
       onClick={onClick}
-      className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition ${
+      className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition active:shadow-glow-orange ${
         active ? "bg-harbor-orange/10 text-harbor-orange" : "text-ink-dim"
       }`}
     >
       <Icon size={14} />
       {label}
       {badge ? <span className="rounded-full bg-base-surface2 px-1.5 text-[10px] text-ink-faint">{badge}</span> : null}
+    </button>
+  );
+}
+
+function ToolbarIconButton({
+  icon: Icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: any;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim transition active:shadow-glow-orange disabled:opacity-30"
+    >
+      <Icon size={15} />
     </button>
   );
 }
