@@ -63,8 +63,9 @@ export default function GithubToolChooser() {
             href="/tools/github/settings"
             className="group flex items-center gap-4 rounded-2xl border border-base-border bg-base-surface p-4 shadow-card active:scale-[0.99]"
           >
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-base-surface2 to-harbor-navyDeep text-white shadow-card"
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-base-surface2 to-harbor-navyDeep text-white shadow-card"
               <Settings2 size={22} strokeWidth={1.75} />
+            </div>
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-display text-base font-semibold text-ink">{t("github_choose_settings")}</p>
