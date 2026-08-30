@@ -29,8 +29,8 @@ export default function GithubCodeRepoPicker() {
     fetch("/api/repos")
       .then((res) => res.json())
       .then((data) => {
-        if (!Array.isArray(data)) throw new Error(data?.error || "failed");
-        setRepos(data);
+        if (!data.ok) throw new Error(data.error || "load_failed");
+        setRepos(data.repos);
       })
       .catch((err) => setLoadError(String(err?.message || err)));
   }, []);
