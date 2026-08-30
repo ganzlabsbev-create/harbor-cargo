@@ -128,6 +128,25 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
   }, [branch, loadTree]);
 
   // --- derived display paths (base tree adjusted by pending add/rename/delete) ---
+  // `pendingChanges` gets a brand-new Map reference on *every keystroke*
+  // (handleChange below always does `new Map(prev)`), even when just
+  // editing the content of an already-open, already-dirty file — nothing
+  // about the file *list* actually changed on those keystrokes. Sorting
+  // the full project tree (which can be hundreds/thousands of paths) on
+  // every single character typed was the source of the editor lag.
+  // `structuralSignature` only changes when a file is actually added,
+  // deleted, or renamed, so `displayPaths` — and the file tree it feeds —
+  // only recomputes then, not on every keystroke.
+  const structuralSignature = useMemo(() => {
+    const parts: string[] = [];
+    for (const c of pendingChanges.values()) {
+      if (c.kind === "add") parts.push(`a:${c.path}`);
+      else if (c.kind === "delete") parts.push(`d:${c.path}`);
+      else if (c.kind === "rename") parts.push(`r:${c.fromPath}>${c.toPath}`);
+    }
+    return parts.sort().join("|");
+  }, [pendingChanges]);
+
   const displayPaths = useMemo(() => {
     if (!basePaths) return [];
     const set = new Set(basePaths);
@@ -140,7 +159,8 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
       }
     }
     return Array.from(set).sort();
-  }, [basePaths, pendingChanges]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basePaths, structuralSignature]);
 
   const dirtyInfo: DirtyInfo = useMemo(() => {
     const dirtyPaths = new Set<string>();

@@ -29,7 +29,7 @@ export const harborEditorTheme = EditorView.theme(
     ".cm-content": { caretColor: colors.orange, fontFamily: "var(--font-mono, ui-monospace, monospace)", padding: "10px 0" },
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: colors.orange },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-      backgroundColor: "rgba(250,101,34,0.28)",
+      backgroundColor: "rgba(250,101,34,0.5)",
     },
     ".cm-panels": { backgroundColor: colors.gutterBg, color: colors.ink },
     // The in-file find panel (opened via the toolbar search icon) sits as a

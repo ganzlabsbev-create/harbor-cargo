@@ -54,20 +54,46 @@ export function collectSyntaxDiagnostics(state: EditorState): CodeDiagnostic[] {
   const docLen = state.doc.length;
   const raw: CodeDiagnostic[] = [];
   const cursor = tree.cursor();
+  // Catches `key="value"` / `key={expr}` sitting as bare JSX text — e.g. a
+  // stray attribute left behind after a wrapping tag (like a <div>) was
+  // accidentally deleted. Lezer parses that as ordinary JSX text content
+  // (JSX allows free text as a child), so it never produces an error node
+  // and the walk below would otherwise miss it entirely.
+  const strayAttrPattern = /^[a-zA-Z_][\w-]*\s*=\s*("[^"]*"|\{[^}]*\})$/;
   do {
-    if (!cursor.type.isError) continue;
-    const from = cursor.from;
-    if (from >= docLen) continue; // artifact right at end-of-document, not a real spot to point at
-    const to = Math.min(cursor.to > from ? cursor.to : from + 1, docLen);
-    const line = state.doc.lineAt(from);
-    const snippet = state.doc.sliceString(from, Math.min(to, line.to, from + 24)).trim();
-    raw.push({
-      from,
-      to,
-      line: line.number,
-      col: from - line.from + 1,
-      message: snippet ? `Unexpected syntax near "${snippet}"` : "Unexpected syntax",
-    });
+    if (cursor.type.isError) {
+      const from = cursor.from;
+      if (from >= docLen) continue; // artifact right at end-of-document, not a real spot to point at
+      const to = Math.min(cursor.to > from ? cursor.to : from + 1, docLen);
+      const line = state.doc.lineAt(from);
+      const snippet = state.doc.sliceString(from, Math.min(to, line.to, from + 24)).trim();
+      raw.push({
+        from,
+        to,
+        line: line.number,
+        col: from - line.from + 1,
+        message: snippet ? `Unexpected syntax near "${snippet}"` : "Unexpected syntax",
+      });
+      continue;
+    }
+    if (cursor.type.name === "JSXText") {
+      const raw_text = state.doc.sliceString(cursor.from, cursor.to);
+      const trimmed = raw_text.trim();
+      if (trimmed && strayAttrPattern.test(trimmed)) {
+        const leadingWs = raw_text.length - raw_text.trimStart().length;
+        const from = cursor.from + leadingWs;
+        if (from >= docLen) continue;
+        const to = Math.min(from + trimmed.length, docLen);
+        const line = state.doc.lineAt(from);
+        raw.push({
+          from,
+          to,
+          line: line.number,
+          col: from - line.from + 1,
+          message: `"${trimmed.slice(0, 24)}" looks like a misplaced attribute — is a wrapping tag missing?`,
+        });
+      }
+    }
   } while (cursor.next());
 
   // Lezer's error recovery frequently wraps one bad token in several
