@@ -77,7 +77,6 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
   const [showProblems, setShowProblems] = useState(false);
   const [pendingJumpLine, setPendingJumpLine] = useState<number | null>(null);
   const [historyInfo, setHistoryInfo] = useState<{ canUndo: boolean; canRedo: boolean }>({ canUndo: false, canRedo: false });
-  const [pendingOpenSearch, setPendingOpenSearch] = useState(false);
 
   const [reviewSet, setReviewSet] = useState<PendingChange[] | null>(null); // null = closed
   const [pathPrompt, setPathPrompt] = useState<{ mode: "new" | "rename"; initialPath: string } | null>(null);
@@ -225,29 +224,9 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
     setHistoryInfo({ canUndo: false, canRedo: false });
   }, [activeTab]);
 
-  // The floating search icon can be tapped from any section — if we're not
-  // already on the editor, switch there first and open CodeMirror's find
-  // panel once it has a tick to mount for the (possibly new) active tab.
-  useEffect(() => {
-    if (!pendingOpenSearch) return;
-    if (section === "editor" && activeTab) {
-      const id = setTimeout(() => {
-        editorRef.current?.toggleSearch();
-        setPendingOpenSearch(false);
-      }, 60);
-      return () => clearTimeout(id);
-    }
-  }, [pendingOpenSearch, section, activeTab]);
-
-  function openFileSearch() {
-    if (!activeTab) return;
-    if (section !== "editor") {
-      setSection("editor");
-      setPendingOpenSearch(true);
-    } else {
-      editorRef.current?.toggleSearch();
-    }
-  }
+  // The in-file search icon lives in the editor toolbar (next to undo/redo),
+  // so it's only ever tapped while a file is already open in the editor —
+  // no need to switch sections or wait for a remount first.
 
   function closeTab(path: string) {
     setOpenTabs((tabs) => {
@@ -498,26 +477,12 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
   return (
     <main className="flex min-h-dvh flex-col bg-base-bg">
       <Header />
-      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-4">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 pt-4 pb-28">
         <Link href="/tools/github/code" className="mb-2 inline-flex w-fit items-center gap-1 text-sm text-ink-dim">
           <ChevronLeft size={16} /> {t("back")}
         </Link>
 
         <AuthGate next={`/tools/github/code/${owner}/${repo}`}>
-          {/* floating in-file search icon — visible on every section tab, jumps to
-              the editor (if needed) and opens CodeMirror's own find panel scoped
-              to whichever file is currently open. Project-wide search stays in
-              the Search tab below. Nudge `top` if this overlaps a taller Header. */}
-          <button
-            onClick={openFileSearch}
-            disabled={!activeTab}
-            aria-label={t("code_search_in_file")}
-            title={t("code_search_in_file")}
-            className="fixed right-4 top-20 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-base-border bg-base-surface text-ink-dim shadow-card transition active:shadow-glow-orange disabled:opacity-40"
-          >
-            <SearchIcon size={18} />
-          </button>
-
           {/* top bar: repo + branch + commit */}
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="min-w-0">
@@ -657,6 +622,11 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
                             label={t("code_revert_project")}
                             disabled={changeCount === 0}
                             onClick={() => setRevertTarget({ scope: "project" })}
+                          />
+                          <ToolbarIconButton
+                            icon={SearchIcon}
+                            label={t("code_search_in_file")}
+                            onClick={() => editorRef.current?.toggleSearch()}
                           />
                         </div>
                       </div>
