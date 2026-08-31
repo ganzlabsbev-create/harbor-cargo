@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ChevronLeft, Smartphone } from "lucide-react";
+import { ChevronLeft, Smartphone, KeyRound } from "lucide-react";
 import Header from "@/components/Header";
 import ToolCard from "@/components/ToolCard";
 import { useLang } from "@/lib/i18n-context";
@@ -10,9 +10,11 @@ import { useLang } from "@/lib/i18n-context";
 /**
  * "Harbor" is the category of tools Harbor Cargo builds itself (as opposed
  * to GitHub/Vercel, which are integrations with someone else's service).
- * Today that's Preview (existing, at /tools/preview — route unchanged) and
- * PWA (new, at /tools/harbor/pwa). Add future in-house tools here the same
- * way ToolGrid on the home page is extended.
+ * Today that's Preview (existing, at /tools/preview — route unchanged),
+ * PWA (at /tools/harbor/pwa), and Android App Identity (at
+ * /tools/harbor/apk — pushes assetlinks.json, no signing/keys involved).
+ * Add future in-house tools here the same way ToolGrid on the home page
+ * is extended.
  */
 export default function HarborPage() {
   const { t } = useLang();
@@ -30,6 +32,12 @@ export default function HarborPage() {
       title: t("tool_pwa_title"),
       description: t("tool_pwa_desc"),
       badge: "DEMO",
+    },
+    {
+      href: "/tools/harbor/apk",
+      icon: <KeyRound size={22} strokeWidth={1.75} />,
+      title: t("apk_title"),
+      description: t("apk_desc"),
     },
   ];
 
