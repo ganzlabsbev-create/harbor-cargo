@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -88,7 +88,7 @@ export default function HarborApkPage() {
   const [pushError, setPushError] = useState<string | null>(null);
   const [pushResult, setPushResult] = useState<{ commitUrl: string } | null>(null);
 
-  function ensureReposLoaded() {
+  function loadRepos() {
     if (reposRequested) return;
     setReposRequested(true);
     fetch("/api/repos")
@@ -99,6 +99,15 @@ export default function HarborApkPage() {
       })
       .catch((err) => setRepoLoadError(String(err?.message || err)));
   }
+
+  // Fires as soon as the pasted JSON becomes valid — not on hover/click of
+  // step 3's box, which the person never actually touches right after
+  // finishing step 2. That earlier version left `repos` stuck at null
+  // forever with no fetch ever sent, showing an infinite "loading" spinner.
+  useEffect(() => {
+    if (parsed) loadRepos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!parsed]);
 
   function pickRepo(r: RepoOption) {
     setSelectedRepo(r);
@@ -283,7 +292,7 @@ export default function HarborApkPage() {
           <p className="mt-1 text-xs text-ink-dim">{t("apk_step3_desc")}</p>
 
           <AuthGate next="/tools/harbor/apk">
-            <div className="mt-3" onMouseEnter={ensureReposLoaded} onClick={ensureReposLoaded}>
+            <div className="mt-3">
               {!parsed ? (
                 <p className="text-xs text-ink-faint">{t("apk_step3_locked")}</p>
               ) : repoLoadError ? (
