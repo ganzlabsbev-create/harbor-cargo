@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Folder, FolderOpen, File as FileIcon, Search, X, MoreVertical, FilePlus, PencilLine, Trash2 } from "lucide-react";
 import { buildTreeFromPaths, SimpleTreeNode } from "@/lib/tree-utils";
 import { fuzzySearchPaths } from "@/lib/fuzzy-match";
@@ -49,6 +49,17 @@ export default function RepoFileTree({
   const searching = query.trim().length > 0;
   const matches = useMemo(() => (searching ? fuzzySearchPaths(paths, query) : []), [searching, paths, query]);
 
+  // Lets keyboard users dismiss the per-file rename/delete menu with
+  // Escape, same as clicking outside it.
+  useEffect(() => {
+    if (!menuPath) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuPath(null);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuPath]);
+
   function toggle(folderPath: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -90,8 +101,9 @@ export default function RepoFileTree({
           <MoreVertical size={15} />
         </button>
         {menuPath === path && (
-          <div className="absolute right-9 top-11 z-20 w-40 overflow-hidden rounded-xl border border-base-border bg-base-surface shadow-card">
+          <div role="menu" className="absolute right-9 top-11 z-20 w-40 overflow-hidden rounded-xl border border-base-border bg-base-surface shadow-card">
             <button
+              role="menuitem"
               onClick={() => {
                 setMenuPath(null);
                 onRename(path);
@@ -101,6 +113,7 @@ export default function RepoFileTree({
               <PencilLine size={14} /> {t("code_rename")}
             </button>
             <button
+              role="menuitem"
               onClick={() => {
                 setMenuPath(null);
                 onDelete(path);

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X, AlertTriangle } from "lucide-react";
 import { useLang } from "@/lib/i18n-context";
+import { useEscapeClose } from "@/lib/use-escape-close";
 
 /**
  * Shared prompt for "new file" and "rename" — both are just "give me a
@@ -24,6 +25,7 @@ export default function PathPromptSheet({
 }) {
   const { t } = useLang();
   const [path, setPath] = useState(initialPath);
+  useEscapeClose(onClose);
 
   const trimmed = path.trim().replace(/^\/+/, "");
   const invalid = !trimmed || trimmed.endsWith("/") || trimmed.includes("..");

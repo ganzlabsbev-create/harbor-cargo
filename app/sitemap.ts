@@ -20,7 +20,6 @@ const PUBLIC_PATHS = [
   "/settings/help",
   "/settings/license",
   "/settings/privacy",
-  "/settings/version",
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

@@ -2,6 +2,7 @@
 
 import { AlertTriangle } from "lucide-react";
 import { useLang } from "@/lib/i18n-context";
+import { useEscapeClose } from "@/lib/use-escape-close";
 
 export default function DeleteFileConfirmSheet({
   path,
@@ -13,6 +14,7 @@ export default function DeleteFileConfirmSheet({
   onConfirm: () => void;
 }) {
   const { t } = useLang();
+  useEscapeClose(onClose);
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={onClose}>
       <div className="flex flex-col gap-3 rounded-t-2xl border-t border-base-border bg-base-surface p-4 pb-6 shadow-card" onClick={(e) => e.stopPropagation()}>

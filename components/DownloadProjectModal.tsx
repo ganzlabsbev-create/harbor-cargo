@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Download, X, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import CircleCheckbox from "./CircleCheckbox";
 import { useLang } from "@/lib/i18n-context";
+import { useEscapeClose } from "@/lib/use-escape-close";
 
 /**
  * Download Project (build spec sections 9-13). A bottom sheet, not a new
@@ -146,6 +147,7 @@ export default function DownloadProjectModal({
   }
 
   const busy = stage === "preparing" || stage === "fetching" || stage === "zipping" || stage === "uploading";
+  useEscapeClose(onClose, busy);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={busy ? undefined : onClose}>

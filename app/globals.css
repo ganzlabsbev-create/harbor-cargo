@@ -20,6 +20,24 @@ body {
   background-color: rgba(250, 101, 34, 0.35);
 }
 
+/* App-wide visible keyboard-focus ring. Mouse/touch interaction never
+   triggers :focus-visible in modern browsers, so this only shows up for
+   keyboard (and other non-pointer) navigation — hover-only interactions
+   stay visually unchanged. Applied broadly so custom components (dropdown
+   triggers, tree rows, tabs, etc.) get a consistent ring even where a
+   component doesn't set its own focus style. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #fa6522;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 /* Harbor wave divider used under hero/header sections.
    The crest touches the very top of the tile and the fill runs solid to the
    bottom, so it sits flush against whatever's above it instead of floating

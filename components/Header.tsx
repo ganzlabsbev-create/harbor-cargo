@@ -16,14 +16,29 @@ export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const firstMenuItemRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
     function onClickOutside(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    }
     document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKeyDown);
+    // Move focus into the menu so keyboard users don't have to tab past
+    // the trigger again to reach it.
+    firstMenuItemRef.current?.focus();
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [menuOpen]);
 
   async function handleLogout() {
@@ -37,7 +52,7 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-20 bg-base-bg/90 backdrop-blur">
-      <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
+      <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3 md:max-w-3xl lg:max-w-5xl xl:max-w-6xl">
         <Link href="/" className="flex items-center gap-2">
           <Logo size={32} />
           <span className="font-display text-lg font-bold tracking-tight text-ink">HARBOR CARGO</span>
@@ -56,8 +71,11 @@ export default function Header() {
 
           <div className="relative" ref={menuRef}>
             <button
+              ref={menuButtonRef}
               onClick={() => setMenuOpen((v) => !v)}
               aria-label={t("nav_account")}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-base-border bg-base-surface2 text-ink-dim transition hover:text-ink"
             >
               {/* Reserve the same slot whether loading, guest, or logged
@@ -83,7 +101,11 @@ export default function Header() {
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-base-border bg-base-surface shadow-card">
+              <div
+                role="menu"
+                aria-label={t("nav_account")}
+                className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-base-border bg-base-surface shadow-card"
+              >
                 {user ? (
                   <>
                     <div className="border-b border-base-border px-4 py-3">
@@ -91,6 +113,8 @@ export default function Header() {
                       <p className="text-xs text-ink-faint">{t("nav_account_github")}</p>
                     </div>
                     <a
+                      ref={(el) => { firstMenuItemRef.current = el; }}
+                      role="menuitem"
                       href={`https://github.com/${user.login}`}
                       target="_blank"
                       rel="noreferrer"
@@ -101,6 +125,7 @@ export default function Header() {
                       <ExternalLink size={12} className="ml-auto text-ink-faint" />
                     </a>
                     <button
+                      role="menuitem"
                       onClick={handleLogout}
                       className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-accent-red transition hover:bg-base-surface2"
                     >
@@ -109,6 +134,8 @@ export default function Header() {
                   </>
                 ) : (
                   <a
+                    ref={(el) => { firstMenuItemRef.current = el; }}
+                    role="menuitem"
                     href={loginHref}
                     onClick={() => setMenuOpen(false)}
                     className="flex items-center gap-2 px-4 py-3 text-sm text-ink transition hover:bg-base-surface2"

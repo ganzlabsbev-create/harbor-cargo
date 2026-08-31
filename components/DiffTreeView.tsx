@@ -230,10 +230,10 @@ function DiffTreeRows({
             >
               {locked ? <Lock size={13} strokeWidth={2} /> : <GripVertical size={13} strokeWidth={2} />}
             </span>
-            <div onClick={handleToggle} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+            <button type="button" onClick={handleToggle} className="flex min-w-0 flex-1 items-center gap-2 text-left">
               <FileIcon size={16} strokeWidth={2} className={`shrink-0 ${colorClass}`} />
               <span className={`min-w-0 flex-1 truncate font-mono text-sm ${colorClass}`}>{n.name}</span>
-            </div>
+            </button>
             <CircleCheckbox checked={checked} onChange={handleToggle} color={circleColor} />
           </div>
         );

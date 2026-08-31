@@ -125,7 +125,7 @@ export default function RepositorySettingsPage({ params }: { params: { owner: st
   return (
     <main className="min-h-dvh bg-base-bg pb-28">
       <Header />
-      <div className="mx-auto max-w-2xl px-4 py-6">
+      <div className="mx-auto max-w-2xl px-4 py-6 md:max-w-3xl lg:max-w-5xl xl:max-w-6xl">
         <Link href={base} className="mb-4 inline-flex items-center gap-1 text-sm text-ink-dim">
           <ChevronLeft size={16} /> {t("back")}
         </Link>
@@ -228,7 +228,7 @@ export default function RepositorySettingsPage({ params }: { params: { owner: st
 
       {loaded && dirty && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-base-border bg-base-surface p-4 shadow-card">
-          <div className="mx-auto flex max-w-2xl items-center justify-between gap-3">
+          <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 md:max-w-3xl lg:max-w-5xl xl:max-w-6xl">
             <p className="text-sm font-medium text-harbor-orange">{t("gh_settings_unsaved")}</p>
             <div className="flex gap-2">
               <button onClick={discard} disabled={saving} className="flex items-center gap-1 rounded-lg border border-base-border px-3 py-2 text-sm text-ink-dim">

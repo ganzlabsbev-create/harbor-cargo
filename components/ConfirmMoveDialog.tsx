@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
+import { useEscapeClose } from "@/lib/use-escape-close";
 
 export default function ConfirmMoveDialog({
   fileName,
@@ -19,6 +20,7 @@ export default function ConfirmMoveDialog({
   t: (k: any) => string;
 }) {
   const isFolder = kind === "folder";
+  useEscapeClose(onCancel);
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={onCancel}>
       <div

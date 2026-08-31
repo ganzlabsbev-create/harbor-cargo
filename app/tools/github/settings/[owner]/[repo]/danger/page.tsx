@@ -70,7 +70,7 @@ export default function DangerZonePage({ params }: { params: { owner: string; re
   return (
     <main className="min-h-dvh bg-base-bg pb-16">
       <Header />
-      <div className="mx-auto max-w-2xl px-4 py-6">
+      <div className="mx-auto max-w-2xl px-4 py-6 md:max-w-3xl lg:max-w-5xl xl:max-w-6xl">
         <Link href={base} className="mb-4 inline-flex items-center gap-1 text-sm text-ink-dim">
           <ChevronLeft size={16} /> {t("back")}
         </Link>

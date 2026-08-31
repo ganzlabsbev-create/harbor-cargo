@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X, Loader2, AlertTriangle, FilePlus, FileMinus, FileEdit, ArrowRight } from "lucide-react";
+import { useEscapeClose } from "@/lib/use-escape-close";
 import { computeLineDiff, collapseContext } from "@/lib/line-diff";
 import { useLang } from "@/lib/i18n-context";
 import type { PendingChange } from "@/lib/code-changes";
@@ -27,6 +28,7 @@ export default function CommitReviewSheet({
   const [message, setMessage] = useState(defaultMessage);
   const [openPath, setOpenPath] = useState<string | null>(changes[0] ? changeKey(changes[0]) : null);
   const [submitting, setSubmitting] = useState(false);
+  useEscapeClose(onClose, submitting);
   const [error, setError] = useState<string | null>(null);
 
   async function confirm() {

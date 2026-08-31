@@ -2,6 +2,7 @@
 
 import { X, AlertTriangle } from "lucide-react";
 import { useLang } from "@/lib/i18n-context";
+import { useEscapeClose } from "@/lib/use-escape-close";
 import type { CodeDiagnostic } from "@/lib/code-lang";
 
 /**
@@ -23,6 +24,7 @@ export default function ProblemsSheet({
   onJump: (line: number) => void;
 }) {
   const { t } = useLang();
+  useEscapeClose(onClose);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={onClose}>

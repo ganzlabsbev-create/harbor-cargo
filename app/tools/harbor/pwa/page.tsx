@@ -247,16 +247,13 @@ export default function HarborPwaPage() {
   return (
     <main className="min-h-dvh bg-base-bg pb-16">
       <Header />
-      <div className="mx-auto max-w-2xl px-4 py-6">
+      <div className="mx-auto max-w-2xl px-4 py-6 md:max-w-3xl lg:max-w-5xl xl:max-w-6xl">
         <Link href="/tools/harbor" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-dim">
           <ChevronLeft size={16} /> {t("back")}
         </Link>
 
         <div className="mb-4 flex items-center gap-2">
           <h1 className="font-display text-xl font-bold tracking-tight text-ink">{t("tool_pwa_title")}</h1>
-          <span className="rounded-full border border-harbor-blue/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-harbor-blue">
-            DEMO
-          </span>
         </div>
 
         {phase === "select" && (

@@ -497,7 +497,7 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
   return (
     <main className="flex min-h-dvh flex-col bg-base-bg">
       <Header />
-      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 pt-4 pb-28">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 pt-4 pb-28 md:max-w-3xl lg:max-w-6xl xl:max-w-7xl">
         <Link href="/tools/github/code" className="mb-2 inline-flex w-fit items-center gap-1 text-sm text-ink-dim">
           <ChevronLeft size={16} /> {t("back")}
         </Link>
@@ -542,17 +542,31 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
           </div>
           {changeCount > 0 && <p className="mb-3 text-xs text-ink-faint">{t("code_branch_locked_hint")}</p>}
 
-          {/* section tabs */}
+          {/* section tabs — on lg+ the Files and Editor panes sit side by
+              side permanently (see the split-pane wrapper below), so only
+              Search still needs an explicit toggle there. */}
           <div className="mb-3 flex shrink-0 gap-1 rounded-xl border border-base-border bg-base-surface p-1">
-            <SectionTab icon={FolderTree} label={t("code_section_files")} active={section === "files"} onClick={() => setSection("files")} />
+            <SectionTab
+              icon={FolderTree}
+              label={t("code_section_files")}
+              active={section === "files"}
+              onClick={() => setSection("files")}
+              className="lg:hidden"
+            />
             <SectionTab
               icon={FileCode2}
               label={t("code_section_editor")}
               active={section === "editor"}
               onClick={() => setSection("editor")}
               badge={openTabs.length || undefined}
+              className="lg:hidden"
             />
-            <SectionTab icon={SearchIcon} label={t("code_section_search")} active={section === "search"} onClick={() => setSection("search")} />
+            <SectionTab
+              icon={SearchIcon}
+              label={t("code_section_search")}
+              active={section === "search"}
+              onClick={() => setSection(section === "search" ? "files" : "search")}
+            />
           </div>
 
           {!branch || !basePaths ? (
@@ -568,12 +582,16 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
               )}
             </div>
           ) : (
-            <div className="min-h-0 flex-1">
+            <div className="min-h-0 flex-1 lg:flex lg:gap-4 lg:items-stretch">
               {/* All three panes stay mounted and are only hidden via CSS when
                   their tab isn't active (rather than unmounted) — this is what
                   keeps in-progress state like a typed search query or an
-                  expanded folder tree from getting wiped just by switching tabs. */}
-              <div className={section === "files" ? "" : "hidden"}>
+                  expanded folder tree from getting wiped just by switching tabs.
+                  On lg+, Files and Editor sit side by side permanently (the
+                  file tree becomes a fixed-width sidebar next to the editor)
+                  instead of stacking behind the mobile section tabs; Search
+                  still swaps in over both of them, since it isn't spatial. */}
+              <div className={`${section === "files" ? "" : "hidden"} ${section !== "search" ? "lg:block lg:w-72 lg:shrink-0" : "lg:hidden"}`}>
                 <div className="h-[78dvh] rounded-2xl border border-base-border bg-base-surface p-2 shadow-card">
                   <RepoFileTree
                     paths={displayPaths}
@@ -593,7 +611,7 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
                 </div>
               </div>
 
-              <div className={section === "editor" ? "" : "hidden"}>
+              <div className={`${section === "editor" ? "" : "hidden"} ${section !== "search" ? "lg:block lg:min-w-0 lg:flex-1" : "lg:hidden"}`}>
                 <div className="flex h-[78dvh] flex-col overflow-hidden rounded-2xl border border-base-border bg-base-surface shadow-card">
                   {openTabs.length === 0 ? (
                     <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-faint">{t("code_no_open_files")}</div>
@@ -700,7 +718,7 @@ export default function GithubCodeWorkspace({ params }: { params: { owner: strin
                 </div>
               </div>
 
-              <div className={section === "search" ? "" : "hidden"}>
+              <div className={`${section === "search" ? "" : "hidden"} lg:flex-1`}>
                 <div className="h-[78dvh] rounded-2xl border border-base-border bg-base-surface p-2 shadow-card">
                   {branch && <CodeSearchPanel owner={owner} repo={repo} branch={branch} onOpenAtLine={(p, line) => openFile(p, line)} />}
                 </div>
@@ -759,19 +777,21 @@ function SectionTab({
   active,
   onClick,
   badge,
+  className,
 }: {
   icon: any;
   label: string;
   active: boolean;
   onClick: () => void;
   badge?: number;
+  className?: string;
 }) {
   return (
     <button
       onClick={onClick}
       className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition active:shadow-glow-orange ${
         active ? "bg-harbor-orange/10 text-harbor-orange" : "text-ink-dim"
-      }`}
+      } ${className || ""}`}
     >
       <Icon size={14} />
       {label}
