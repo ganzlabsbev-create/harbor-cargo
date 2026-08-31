@@ -17,7 +17,7 @@ export default function Header() {
   const [avatarFailed, setAvatarFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const firstMenuItemRef = useRef<HTMLElement>(null);
+  const firstMenuItemRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
