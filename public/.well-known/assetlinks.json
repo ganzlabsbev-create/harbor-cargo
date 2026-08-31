@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.harbor_cargo.twa",
+      "sha256_cert_fingerprints": [
+        "FA:05:97:E2:DB:AF:B5:01:37:A8:FD:8A:9B:0B:4E:61:42:A5:5F:DD:A0:C7:D9:67:B8:B2:87:07:73:99:BF:CD"
+      ]
+    }
+  }
+]
